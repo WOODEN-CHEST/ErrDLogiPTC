@@ -54,5 +54,9 @@ dkms.conf
 # debug information files
 *.dwo
 
+
+# Shit
 compile/out/ErrDLogiPT
 compile/out/ErrDLogiPT.exe
+lib/
+.vscode/
