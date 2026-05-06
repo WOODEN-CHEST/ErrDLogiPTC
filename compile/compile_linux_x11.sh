@@ -1,0 +1,1 @@
+gcc ../source/*.c -I"../include" -I"../include/raylib" -I"../include/wr" -std=c2x -Werror -Wall -Wextra -Wpedantic -O3 -o "out/ErrDLogiPT" -L"../lib/wr" -L"../lib/raylib" -l:libraylib.a -l:libwr.a -lGL -lm -lpthread -ldl -lrt -lX11

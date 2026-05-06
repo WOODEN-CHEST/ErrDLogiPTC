@@ -53,3 +53,6 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+compile/out/ErrDLogiPT
+compile/out/ErrDLogiPT.exe
