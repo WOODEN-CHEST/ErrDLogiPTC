@@ -19,6 +19,18 @@ static inline Vector2 RenderContext_GetPixelVector(RenderContext* self, RenderVe
     return vector.Value;
 }
 
+static inline float RenderContext_GetPixelFloat(RenderContext* self, RenderFloat value)
+{
+    if (value.Type == RenderValueType_NormalizedFitted)
+    {
+        return RenderContext_SizeFittedToPixel(self, value.Value);
+    }
+    if (value.Type == RenderValueType_NormalizedRelative)
+    {
+        return RenderContext_SizeRelativeToPixel(self, value.Value);
+    }
+    return value.Value;
+}
 
 
 // Functions.
@@ -26,11 +38,14 @@ Color RenderColor_GetFinalColor(RenderColor color)
 {
     Color FinalColor = color.Tint;
 
-    FinalColor.a = (unsigned char)(UCHAR_MAX * color.Opacity);
+    float Opacity = Math_ClampFloat(color.Opacity, RENDER_COLOR_OPACITY_MIN, RENDER_COLOR_OPACITY_MAX);
+    float Brightness = Math_ClampFloat(color.Brightness, RENDER_COLOR_BRIGHTNESS_MIN, RENDER_COLOR_BRIGHTNESS_MAX);
 
-    FinalColor.r = (unsigned char)(FinalColor.r * color.Brightness);
-    FinalColor.g = (unsigned char)(FinalColor.g * color.Brightness);
-    FinalColor.b = (unsigned char)(FinalColor.b * color.Brightness);
+    FinalColor.a = (unsigned char)(UCHAR_MAX * Opacity);
+
+    FinalColor.r = (unsigned char)(FinalColor.r * Brightness);
+    FinalColor.g = (unsigned char)(FinalColor.g * Brightness);
+    FinalColor.b = (unsigned char)(FinalColor.b * Brightness);
 
     return FinalColor;
 }
@@ -96,15 +111,15 @@ void RenderContext_RenderTexture2D(RenderContext* self, const TextureRenderArgum
     };
     Rectangle Destination = (Rectangle) 
     {
-        .x = PixelPosition.x - (PixelSize.x * args->RelativeOrigin.x),
-        .y = PixelPosition.y - (PixelSize.y * args->RelativeOrigin.y),
+        .x = PixelPosition.x,
+        .y = PixelPosition.y,
         .width = PixelSize.x,
         .height = PixelSize.y
     };
-        Vector2 PixelOrigin = (Vector2) 
+    Vector2 PixelOrigin = (Vector2) 
     {
-        .x = Source.x + (Source.width * args->RelativeOrigin.x),
-        .y = Source.y + (Source.height * args->RelativeOrigin.y),
+        .x = PixelSize.x * args->RelativeOrigin.x,
+        .y = PixelSize.y * args->RelativeOrigin.y,
     };
     Color FinalTint = RenderColor_GetFinalColor(args->TargetColor);
     float RotationDeg = Math_RadToDegFloat(args->RotationRad);
@@ -117,7 +132,38 @@ void RenderContext_RenderTexture2D(RenderContext* self, const TextureRenderArgum
     self->_textureDrawCount++;
 }
 
-void RenderContext_RenderText2D(RenderContext* self, const TextRenderArguments* args);
+void RenderContext_RenderText2D(RenderContext* self, const TextRenderArguments* args)
+{
+    Vector2 DrawSize;
+    if (args->HasCachedDrawSize)
+    {
+        DrawSize = args->CachedDrawSize;
+    }
+    else
+    {
+        DrawSize = Renderer_MeasureTextNormalized(args->TargetFont, args->Text, args->SizeRelativeSpacing);
+    }
+
+    float PixelSize = RenderContext_GetPixelFloat(self, args->Size);
+    Vector2 PixelPosition = RenderContext_GetPixelVector(self, args->Position, true);
+    Vector2 PixelOrigin = (Vector2)
+    {
+        .x = args->RelativeOrigin.x * DrawSize.x * PixelSize,
+        .y = args->RelativeOrigin.y * DrawSize.y * PixelSize,
+    };
+    Color FinalTint = RenderColor_GetFinalColor(args->TargetColor);
+    float RotationDeg = Math_RadToDegFloat(args->RotationRad);
+    float Spacing = PixelSize * args->SizeRelativeSpacing;
+
+    DrawTextPro(args->TargetFont,
+        (const char*)args->Text,
+        PixelPosition,
+        PixelOrigin,
+        RotationDeg,
+        PixelSize,
+        Spacing,
+        FinalTint);
+}
 
 void RenderContext_BeginRendering(RenderContext* self)
 {

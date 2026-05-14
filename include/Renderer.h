@@ -41,6 +41,12 @@
  */
 
 
+#define RENDER_COLOR_OPACITY_MIN 0.0f
+#define RENDER_COLOR_OPACITY_MAX 1.0f
+#define RENDER_COLOR_BRIGHTNESS_MIN 0.0f
+#define RENDER_COLOR_BRIGHTNESS_MAX 1.0f
+
+
 typedef struct RenderContextStruct
 {
     bool _hasCustomRenderBuffer;
@@ -99,20 +105,21 @@ typedef struct TextureRenderArgumentsStruct
 
 typedef struct TextRenderArgumentsStruct
 {
-    const unsigned char* Text;
+    const unsigned char* Text; // UTF-8 Unicode text, null terminated.
     Font TargetFont;
-    RenderVector2D Position;
-    RenderFloat Size;
-    RenderFloat Spacing;
-    Vector2 RelativeOrigin;
-    float RotationRad;
-    RenderColor TargetColor;
+    RenderVector2D Position; // Position, the text will be rendered as if the origin is placed here.
+    RenderFloat Size; // Size of the font to use.
+    float SizeRelativeSpacing; // Spacing between characters for the text, a multiplier of the size value basically.
+    Vector2 RelativeOrigin; // Relative origin in the entire text.
+    float RotationRad; // Rotation of the text around the origin, in radians.
+    RenderColor TargetColor; // The text color.
 
-    /* For performance reasons it is recommended to pass in the fitted draw size of the text to the draw functions.
+    /* For performance reasons it is recommended to pass in the draw size of the text to the draw functions.
     * If the draw size isn't cached and has to be recalculated for the calls anyway, it can not be passed and the calculation
-    * will be done automatically. */
-    Vector2 CachedFittedDrawSize;
-    bool HasCachedFittedDrawSize;
+    * will be done automatically.
+    * The draw size is supposed to be the one calculated with the Size render float value as the font size. */
+    Vector2 CachedDrawSize;
+    bool HasCachedDrawSize;
 } TextRenderArguments;
 
 
@@ -348,22 +355,9 @@ static inline float RenderContext_SizePixelToFitted(RenderContext* self, float p
 
 
 /* Text. */
-static inline Vector2 RenderContext_MeasureTextPixels(RenderContext* self,
-    Font font,
+static inline Vector2 Renderer_MeasureTextNormalized(Font font,
     const unsigned char* text,
-    float fontSizePixels,
-    float spacing)
+    float relativeSpacing)
 {
-    UNUSED(self);
-    return MeasureTextEx(font, (const char*)text, fontSizePixels, spacing);
-}
-
-static inline Vector2 RenderContext_MeasureTextFitted(RenderContext* self,
-    Font font,
-    const unsigned char* text,
-    float fontSizeFitted,
-    float spacing)
-{
-    UNUSED(self);
-    return MeasureTextEx(font, (const char*)text, fontSizeFitted, spacing);
+    return MeasureTextEx(font, (const char*)text, 1.0f, relativeSpacing);
 }
