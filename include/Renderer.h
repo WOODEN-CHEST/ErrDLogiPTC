@@ -96,7 +96,7 @@ typedef struct TextureRenderArgumentsStruct
 {
     Texture2D Texture;
     RenderVector2D Position; // Position, the texture will be rendered as if the origin is placed here.
-    Rectangle RelativeSourceRectangle; // Area of the texture to draw.
+    Rectangle RelativeSourceRectangle; // Normalized [0;1] area of the texture to draw.
     RenderVector2D Size; // Total size of the final rectangle that will be drawn.
     Vector2 RelativeOrigin; // Relative origin in the texture.
     float RotationRad; // Rotation around origin, in radians.
@@ -115,9 +115,9 @@ typedef struct TextRenderArgumentsStruct
     RenderColor TargetColor; // The text color.
 
     /* For performance reasons it is recommended to pass in the draw size of the text to the draw functions.
-    * If the draw size isn't cached and has to be recalculated for the calls anyway, it can not be passed and the calculation
-    * will be done automatically.
-    * The draw size is supposed to be the one calculated with the Size render float value as the font size. */
+    * If the draw size is not cached, the renderer recalculates it automatically.
+    * CachedDrawSize must be the normalized size returned by Renderer_MeasureTextNormalized, meaning it is measured with
+    * font size 1.0f and relativeSpacing equal to SizeRelativeSpacing. The renderer applies the actual Size scaling itself. */
     Vector2 CachedDrawSize;
     bool HasCachedDrawSize;
 } TextRenderArguments;

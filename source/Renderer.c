@@ -68,8 +68,8 @@ void RenderContext_Create(RenderContext* self,
         self->_hasCustomRenderBuffer = true;
         RenderBufferSize = (Vector2)
         {
-            .x = renderBuffer->texture.width,
-            .y = renderBuffer->texture.height
+            .x = (float)renderBuffer->texture.width,
+            .y = (float)renderBuffer->texture.height
         };
     }
     else
@@ -78,8 +78,8 @@ void RenderContext_Create(RenderContext* self,
         self->_hasCustomRenderBuffer = false;
         RenderBufferSize = (Vector2)
         {
-            .x = GetRenderWidth(),
-            .y = GetRenderHeight(),
+            .x = (float)GetRenderWidth(),
+            .y = (float)GetRenderHeight(),
         };
     }
 
@@ -97,8 +97,8 @@ void RenderContext_RenderTexture2D(RenderContext* self, const TextureRenderArgum
 {
     Vector2 TextureSize = (Vector2) 
     {
-        .x = args->Texture.width,
-        .y = args->Texture.height,
+        .x = (float)args->Texture.width,
+        .y = (float)args->Texture.height,
     };
     Vector2 PixelPosition = RenderContext_GetPixelVector(self, args->Position, true);
     Vector2 PixelSize = RenderContext_GetPixelVector(self, args->Size, false);
@@ -107,7 +107,7 @@ void RenderContext_RenderTexture2D(RenderContext* self, const TextureRenderArgum
         .x = args->RelativeSourceRectangle.x * TextureSize.x,
         .y = args->RelativeSourceRectangle.y * TextureSize.y,
         .width = args->RelativeSourceRectangle.width * TextureSize.x,
-        .height = args->RelativeSourceRectangle.height * args->Texture.height,
+        .height = args->RelativeSourceRectangle.height * TextureSize.y,
     };
     Rectangle Destination = (Rectangle) 
     {
@@ -163,6 +163,7 @@ void RenderContext_RenderText2D(RenderContext* self, const TextRenderArguments* 
         PixelSize,
         Spacing,
         FinalTint);
+    self->_stringDrawCount++;
 }
 
 void RenderContext_BeginRendering(RenderContext* self)
