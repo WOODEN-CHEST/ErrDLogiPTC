@@ -46,7 +46,7 @@ The modules are (in alphabetical order):
 - WRArrayList: A generic array list.
 - WRBinaryIO: Classes and streams for writing and reading binary data.
 - WRChar: Utilities for writing and reading UTF-8 and UTF-16 unicode characters.
-- WRCollection: Basically Java's ICollection or C#'s IEnumerable interfaces.
+- WRCollection: Basically Java's Collection or C#'s IEnumerable interfaces.
 - WRComparator: Generic object comparison operations like in Java.
 - WRCompile: Random compiling utils, like a macro which marks a parameter as unused.
 - WREnvironment: Environment properties of the host machine, like newline, directory sperator, endianess, etc.

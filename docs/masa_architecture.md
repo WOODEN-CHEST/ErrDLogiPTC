@@ -1,1 +1,0 @@
-## This document simply describes how the Masa machine and its instructions work.

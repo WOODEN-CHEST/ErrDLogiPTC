@@ -1,0 +1,160 @@
+SplineFontDB: 3.2
+FontName: Untitled1
+FullName: Untitled1
+FamilyName: Untitled1
+Weight: Regular
+Copyright: Copyright (c) 2026, wooden
+UComments: "2026-5-7: Created with FontForge (http://fontforge.org)"
+Version: 001.000
+ItalicAngle: 0
+UnderlinePosition: -100
+UnderlineWidth: 50
+Ascent: 800
+Descent: 200
+InvalidEm: 0
+LayerCount: 2
+Layer: 0 0 "Back" 1
+Layer: 1 0 "Fore" 0
+XUID: [1021 572 -621411783 10836870]
+StyleMap: 0x0000
+FSType: 0
+OS2Version: 0
+OS2_WeightWidthSlopeOnly: 0
+OS2_UseTypoMetrics: 1
+CreationTime: 1778146471
+ModificationTime: 1778247947
+OS2TypoAscent: 0
+OS2TypoAOffset: 1
+OS2TypoDescent: 0
+OS2TypoDOffset: 1
+OS2TypoLinegap: 90
+OS2WinAscent: 0
+OS2WinAOffset: 1
+OS2WinDescent: 0
+OS2WinDOffset: 1
+HheadAscent: 0
+HheadAOffset: 1
+HheadDescent: 0
+HheadDOffset: 1
+DEI: 91125
+Encoding: UnicodeFull
+UnicodeInterp: none
+NameList: AGL For New Fonts
+DisplaySize: -48
+AntiAlias: 1
+FitToEm: 0
+WinInfo: 0 38 14
+BeginChars: 1114114 4
+
+StartChar: exclam
+Encoding: 33 33 0
+Width: 360
+Flags: HMW
+TeX: 800 0
+LayerCount: 2
+Fore
+SplineSet
+80 200 m 1
+ 280 200 l 1
+ 280 0 l 1
+ 80 0 l 1
+ 80 200 l 1
+80 800 m 1
+ 280 800 l 1
+ 280 263 l 1
+ 80 263 l 1
+ 80 800 l 1
+EndSplineSet
+EndChar
+
+StartChar: quotedbl
+Encoding: 34 34 1
+Width: 454
+Flags: HW
+LayerCount: 2
+Fore
+SplineSet
+256 800 m 1
+ 374 800 l 1
+ 374 554 l 1
+ 256 554 l 1
+ 256 800 l 1
+80 800 m 1
+ 198 800 l 1
+ 198 554 l 1
+ 80 554 l 1
+ 80 800 l 1
+EndSplineSet
+EndChar
+
+StartChar: numbersign
+Encoding: 35 35 2
+Width: 858
+Flags: HW
+LayerCount: 2
+Fore
+SplineSet
+245 800 m 1
+ 365 800 l 1
+ 365 569 l 1
+ 485 569 l 1
+ 485 800 l 1
+ 605 800 l 1
+ 605 569 l 1
+ 778 569 l 1
+ 777 450 l 1
+ 605 450 l 1
+ 605 338 l 1
+ 778 338 l 1
+ 777 219 l 1
+ 605 219 l 1
+ 605 0 l 1
+ 485 0 l 1
+ 485 219 l 1
+ 365 219 l 1
+ 365 0 l 1
+ 245 0 l 1
+ 245 219 l 1
+ 80 219 l 1
+ 81 338 l 1
+ 245 338 l 1
+ 245 450 l 1
+ 80 450 l 1
+ 81 569 l 1
+ 245 569 l 1
+ 245 800 l 1
+485 450 m 1
+ 365 450 l 1
+ 365 338 l 1
+ 485 338 l 1
+ 485 450 l 1
+EndSplineSet
+EndChar
+
+StartChar: dollar
+Encoding: 36 36 3
+Width: 1000
+Flags: HO
+LayerCount: 2
+Fore
+SplineSet
+627 612 m 1
+ 697 690 l 1
+ 697 690 553.497735902 816.162977717 412 775 c 0
+ 302 743 250 629 280 543 c 0
+ 310 457 386 434.000976562 442 390 c 0
+ 481.44140625 359.009765625 541.000196759 325.000003123 542 262 c 0
+ 542.866210938 207.41796875 434 149 370 167 c 0
+ 306 185 278 232 242 244 c 0
+ 206 256 153 142 153 142 c 1
+ 301 26 l 1
+ 301 26 498 -6 572 66 c 0
+ 646 138 694.194212807 189.515447767 698 278 c 0
+ 702 371 694 370 622 430 c 0
+ 550 490 420 535 410 571 c 0
+ 400 607 408.728661626 648.159681191 446 664 c 0
+ 526 698 627 612 627 612 c 1
+EndSplineSet
+EndChar
+EndChars
+EndSplineFont

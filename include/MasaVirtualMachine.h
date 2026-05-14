@@ -8,7 +8,7 @@
 /**
  * Virtual machine called "Masa" which does stuffs.
  * This module was part of an initial idea for ErrDLogiPTC, but was scrapped due to issues with getting it to work.
- * Maybe in the future... :)
+ * Maybe in the future...
  */
 
 #define NANOSECONDS_IN_SECOND (1'000'000'000)
