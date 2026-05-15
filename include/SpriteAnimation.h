@@ -51,6 +51,7 @@ typedef struct SpriteAnimationStruct
     bool _defaultIsLooped;
 } SpriteAnimation;
 
+typedef struct SpriteAnimationInstanceStruct SpriteAnimationInstance;
 
 typedef enum SpriteAnimationReachedStateEnum
 {
@@ -66,15 +67,15 @@ typedef enum SpriteAnimationStateDirectionEnum
     SpriteAnimationStateDirection_Backwards
 } SpriteAnimationStateDirection;
 
-typedef struct SpriteAnimationEndArgs
+typedef struct SpriteAnimationEndArgsStruct
 {
     SpriteAnimationStateDirection _direction;
-};
+} SpriteAnimationEndArgs;
 
-typedef struct SpriteAnimationLoopArgs
+typedef struct SpriteAnimationLoopArgsStruct
 {
     SpriteAnimationStateDirection _direction;
-};
+} SpriteAnimationLoopArgs;
 
 typedef union SpriteAnimationEventSpecificArgsUnion
 {
@@ -90,7 +91,7 @@ typedef struct SpriteAnimationStateReachEventArgsStruct
 
 } SpriteAnimationStateReachEventArgs;
 
-typedef struct SpriteAnimationInstanceStruct
+struct SpriteAnimationInstanceStruct
 {
     SpriteAnimation* _source;
     size_t _frameIndex;
@@ -100,13 +101,17 @@ typedef struct SpriteAnimationInstanceStruct
     bool _isRunning;
     bool _isLooped;
     WREvent _stateReachEvent;
-} SpriteAnimationInstance;
+};
 
 
 // Functions.
 Error SpriteAnimation_Construct1(SpriteAnimation* self, GenericBuffer* frames);
 
-Error SpriteAnimation_Deconstruct1(SpriteAnimation* self);
+Error SpriteAnimation_Deconstruct(SpriteAnimation* self);
+
+size_t SpriteAnimation_GetFrameCount(SpriteAnimation* self);
+
+Error SpriteAnimation_GetFrameAt(SpriteAnimation* self, size_t frameIndex, SpriteAnimationFrame* outFrame);
 
 Error SpriteAnimation_CreateInstance(SpriteAnimation* self, SpriteAnimationInstance* outInstance);
 
@@ -120,6 +125,22 @@ Error SpriteAnimationInstance_CopyAnimationStateTo(SpriteAnimationInstance* self
 
 /* Copies everything to the destination. */
 Error SpriteAnimationInstance_CopyEntireStateTo(SpriteAnimationInstance* self, SpriteAnimationInstance* destination);
+
+static inline SpriteAnimation* SpriteAnimationInstance_GetSource(SpriteAnimationInstance* self)
+{
+    return self->_source;
+}
+
+static inline bool SpriteAnimationInstance_HasSource(SpriteAnimationInstance* self)
+{
+    return (self->_source != NULL);
+}
+
+size_t SpriteAnimationInstance_GetFrameCount(SpriteAnimationInstance* self);
+
+Error SpriteAnimationInstance_GetFrameAt(SpriteAnimationInstance* self, size_t frameIndex, SpriteAnimationFrame* outFrame);
+
+Error SpriteAnimationInstance_GetCurrentFrame(SpriteAnimationInstance* self, SpriteAnimationFrame* outFrame);
 
 static inline double SpriteAnimationInstance_GetFPS(SpriteAnimationInstance* self)
 {
@@ -149,14 +170,14 @@ static inline double SpriteAnimationInstance_GetSecondsSinceFrameChange(SpriteAn
 
 Error SpriteAnimationInstance_SetSecondsSinceFrameChange(SpriteAnimationInstance* self, double seconds);
 
-static inline int64_t SpriteAnimationInstance_GetIsRunning(SpriteAnimationInstance* self)
+static inline bool SpriteAnimationInstance_GetIsRunning(SpriteAnimationInstance* self)
 {
     return self->_isRunning;
 }
 
 Error SpriteAnimationInstance_SetIsRunning(SpriteAnimationInstance* self, bool value);
 
-static inline int64_t SpriteAnimationInstance_GetIsLooped(SpriteAnimationInstance* self)
+static inline bool SpriteAnimationInstance_GetIsLooped(SpriteAnimationInstance* self)
 {
     return self->_isLooped;
 }
@@ -172,4 +193,7 @@ static inline WREvent* SpriteAnimationInstance_GetStateReachEvent(SpriteAnimatio
 Error SpriteAnimationInstance_ResetProperties(SpriteAnimationInstance* self);
 
 /* Resets the animation state to be the start of the animation. */
-Error SpriteAnimation_ResetAnimation(SpriteAnimationInstance* self);
+Error SpriteAnimationInstance_ResetAnimation(SpriteAnimationInstance* self);
+
+/* Advances the animation instance by the given amount of elapsed time. */
+Error SpriteAnimationInstance_Update(SpriteAnimationInstance* self, double elapsedSeconds);
