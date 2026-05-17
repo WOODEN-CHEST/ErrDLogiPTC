@@ -18,11 +18,11 @@ Error SpriteSheet_Construct1(SpriteSheet* self, Texture2D texture, GenericBuffer
 {
     if (self == NULL)
     {
-        return CreateNullError("self");
+        return CreateNullError(u8"self");
     }
     if (entries == NULL)
     {
-        return CreateNullError("entries");
+        return CreateNullError(u8"entries");
     }
 
     Memory_Zero(self, sizeof(*self));
@@ -36,7 +36,7 @@ Error SpriteSheet_Deconstruct(SpriteSheet* self)
 {
     if (self == NULL)
     {
-        return CreateNullError("self");
+        return CreateNullError(u8"self");
     }
 
     Memory_Zero(self, sizeof(*self));
@@ -48,7 +48,7 @@ Error SpriteSheet_GetTextureArea(SpriteSheet* self, const unsigned char* entryNa
 {
     if (self == NULL)
     {
-        return CreateNullError("self");
+        return CreateNullError(u8"self");
     }
 
     Memory_Zero(outArea, sizeof(*outArea));
@@ -56,7 +56,7 @@ Error SpriteSheet_GetTextureArea(SpriteSheet* self, const unsigned char* entryNa
     GenericBuffer* Entries = self->_entries;
     for (size_t i = 0; i < Entries->_count; i++)
     {
-        SpriteSheetEntry* Entry = GenericBuffer_GetPointerToElement(self, i);
+        SpriteSheetEntry* Entry = GenericBuffer_GetPointerToElement(Entries, i);
         if (Entry == NULL)
         {
             return Error_Construct3(ErrorCode_InvalidState,

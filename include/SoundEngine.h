@@ -3,6 +3,7 @@
 #include "wr/WRMemory.h"
 #include "wr/WRError.h"
 #include <stddef.h>
+#include <stdint.h>
 
 
 /**
@@ -21,13 +22,16 @@
  * 
  * Some of the audio engine is thread safe, some of it is not:
  * The audio track functions and audio engine functions are thread safe and can be called any time.
- * The sound instance functions are not. To modify sound instances, use audio commands:
+ * They queue work to the audio thread when exact sample timing matters.
+ * The sound instance functions are not generally thread safe. To modify sound instances, use audio commands:
  *     Schedule a command on the track timeline, then in that command's function modify the sound instance.
- *     Do not set audio instance properties or query them while not on the audio thread function.
+ *     Do not set audio instance properties or query timing-sensitive sound state while not on the audio thread.
  * For commands, if a command is scheduled on a track at a time which has already been passed, it just gets executed
  * at the next opportunity as if it just happened.
  * The command setters all copy the command objects when setting them, so the references do not need to be kept alive after
  * the setters.
+ * Creating a sound instance creates the object immediately and calls the initializer in the same method call,
+ * but attaching it to the track is deferred to the audio thread. The pointer remains stable after creation.
  * 
  * For the automated values, setting the duration to be instant instantly sets the current value in the same method call.
  * 
@@ -52,7 +56,7 @@
 
 #define MAX_AUDIO_CHANNELS 2
 
-#define INLINE_AUDIO_COMMAND_USER_DATA_SIZE 64
+#define INLINE_AUDIO_COMMAND_USER_DATA_SIZE 128
 
 
 typedef struct AudioFormatStruct
@@ -101,6 +105,10 @@ typedef struct GameSoundStruct
     AudioFormat _format;
 } GameSound;
 
+typedef struct AudioTrackStruct AudioTrack;
+
+typedef struct AudioEngineStruct AudioEngine;
+
 typedef struct ISoundModifierVTableStruct
 {
     void* Self;
@@ -122,6 +130,9 @@ typedef struct SampleProviderStruct
     SoundAutomatedFloat _volume;
     SoundAutomatedFloat _pan; // [-1 left, 0 middle, 1 right]
     GenericBuffer* _modifiers;
+    AudioEngine* _ownerEngine;
+    void* _owner;
+    bool _ownerIsTrack;
 } SampleProvider;
 
 typedef Error (*AudioCommandFunction)(AudioTrack* track, void* userData);
@@ -153,7 +164,17 @@ struct GameSoundInstanceStruct
 
 typedef struct ReverbSoundModifierStruct
 {
-    /* To fill in. */
+    ISoundModifier _modifier;
+    SoundAutomatedFloat DryVolume;
+    SoundAutomatedFloat WetVolume;
+    SoundAutomatedFloat Feedback;
+    SoundAutomatedDouble DelaySeconds;
+    SoundAutomatedFloat Damping;
+    float* _delayBuffer;
+    size_t _delayBufferFrameCount;
+    size_t _delayBufferWriteFrameIndex;
+    float _previousLowPassLeft;
+    float _previousLowPassRight;
 } ReverbSoundModifier;
 
 typedef enum BiQuadPassTypeEnum
@@ -164,17 +185,31 @@ typedef enum BiQuadPassTypeEnum
 
 typedef struct BiQuadPassSoundModifierStruct
 {
-    /* To fill in. */
+    ISoundModifier _modifier;
+    BiQuadPassTypeEnum PassType;
+    SoundAutomatedFloat WetVolume;
+    SoundAutomatedFloat CutoffFrequency;
+    SoundAutomatedFloat Resonance;
+    float _x1Left;
+    float _x2Left;
+    float _y1Left;
+    float _y2Left;
+    float _x1Right;
+    float _x2Right;
+    float _y1Right;
+    float _y2Right;
 } BiQuadPassSoundModifier;
 
 typedef struct BitCrusherModifierStruct
 {
-    /* To fill in. */
+    ISoundModifier _modifier;
+    SoundAutomatedFloat WetVolume;
+    SoundAutomatedDouble HoldSeconds;
+    SoundAutomatedFloat BitDepth;
+    double _holdSecondsLeft;
+    float _heldLeft;
+    float _heldRight;
 } BitCrusherModifier;
-
-typedef struct AudioTrackStruct AudioTrack;
-
-typedef struct AudioEngineStruct AudioEngine;
 
 typedef Error (*SoundInstanceInitializer)(GameSoundInstance* soundInstance, void* userData);
 
@@ -239,6 +274,39 @@ static inline void ISoundModifier_ResetState(ISoundModifier* self)
     self->_vtable._resetState(self->_vtable.Self);
 }
 
+Error ReverbSoundModifier_Construct1(ReverbSoundModifier* self);
+
+void ReverbSoundModifier_Deconstruct(ReverbSoundModifier* self);
+
+void ReverbSoundModifier_ResetState(ReverbSoundModifier* self);
+
+static inline ISoundModifier* ReverbSoundModifier_GetModifier(ReverbSoundModifier* self)
+{
+    return &self->_modifier;
+}
+
+Error BiQuadPassSoundModifier_Construct1(BiQuadPassSoundModifier* self, BiQuadPassTypeEnum passType);
+
+void BiQuadPassSoundModifier_Deconstruct(BiQuadPassSoundModifier* self);
+
+void BiQuadPassSoundModifier_ResetState(BiQuadPassSoundModifier* self);
+
+static inline ISoundModifier* BiQuadPassSoundModifier_GetModifier(BiQuadPassSoundModifier* self)
+{
+    return &self->_modifier;
+}
+
+Error BitCrusherModifier_Construct1(BitCrusherModifier* self);
+
+void BitCrusherModifier_Deconstruct(BitCrusherModifier* self);
+
+void BitCrusherModifier_ResetState(BitCrusherModifier* self);
+
+static inline ISoundModifier* BitCrusherModifier_GetModifier(BitCrusherModifier* self)
+{
+    return &self->_modifier;
+}
+
 
 // Automated values.
 
@@ -266,7 +334,7 @@ static inline SoundAutomatedFloat* SampleProvider_GetVolume(SampleProvider* self
 }
 
 /* Modifier must be kept alive through the entirety of the sample provider's lifetime. */
-Error SampleProvider_AddModifier(SampleProvider* self, ISoundModifier* modifier);
+Error SampleProvider_AddModifier(SampleProvider* self, ISoundModifier* modifier, size_t index);
 
 Error SampleProvider_RemoveModifier(SampleProvider* self, ISoundModifier* modifier);
 
