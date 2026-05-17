@@ -1,0 +1,340 @@
+#pragma once
+#include "raylib/raylib.h"
+#include "wr/WRMemory.h"
+#include "wr/WRError.h"
+#include <stddef.h>
+
+
+/**
+ * The audio engine of the game.
+ * 
+ * At the core of everything is the audio engine. It contains a master track and plays all the sounds.
+ * Only 1 audio engine may exist at a time. Constructing a new audio engine while one already exists will
+ * raise an error.
+ * 
+ * An audio track is a single track which contains both subtracks and sounds. There is no limit on the nesting
+ * of audio tracks or the number of sounds a track can have.
+ * 
+ * Audio modifiers (effects) can be applies to audio tracks and sounds.
+ * 
+ * The audio engine, sound, track and modifier pointers and all stable and won't change after creation.
+ * 
+ * Some of the audio engine is thread safe, some of it is not:
+ * The audio track functions and audio engine functions are thread safe and can be called any time.
+ * The sound instance functions are not. To modify sound instances, use audio commands:
+ *     Schedule a command on the track timeline, then in that command's function modify the sound instance.
+ *     Do not set audio instance properties or query them while not on the audio thread function.
+ * For commands, if a command is scheduled on a track at a time which has already been passed, it just gets executed
+ * at the next opportunity as if it just happened.
+ * The command setters all copy the command objects when setting them, so the references do not need to be kept alive after
+ * the setters.
+ * 
+ * For the automated values, setting the duration to be instant instantly sets the current value in the same method call.
+ * 
+ * To execute actions (like change modifiers) on the audio track or just.
+ * 
+ * When sampling, samples are interpolated between the left and right sample at a point. The sample rate
+ * in the sample provider determines the distance between the points (so no, the sample rate does not change
+ * the playback speed, just sampling quality).
+ * 
+ * Sounds, after being added to the audio track, are automatically removed from it once they end and no
+ * modifiers for them are leaving tails anymore.
+ * 
+ * Panning additionally changes volume to adjust for perceived loudness.
+ */
+
+
+#define SOUND_SAMPLE_PAN_LEFT -1.0f
+#define SOUND_SAMPLE_PAN_MIDDLE 0.0f
+#define SOUND_SAMPLE_PAN_RIGHT 1.0f
+
+#define AUTOMATED_VALUE_DURATION_INSTANT 0.0
+
+#define MAX_AUDIO_CHANNELS 2
+
+#define INLINE_AUDIO_COMMAND_USER_DATA_SIZE 64
+
+
+typedef struct AudioFormatStruct
+{
+    float SampleRate;
+    int32_t ChannelCount;
+} AudioFormat;
+
+typedef struct SoundAutomatedValueTimeStruct
+{
+    double _changeDurationLeftSeconds;
+} SoundAutomatedValueTime;
+
+typedef struct SoundAutomatedFloatStruct
+{
+    float _currentValue;
+    float _targetValue;
+    SoundAutomatedValueTime _time;
+} SoundAutomatedFloat;
+
+typedef struct SoundAutomatedDoubleStruct
+{
+    double _currentValue;
+    double _targetValue;
+    SoundAutomatedValueTime _time;
+} SoundAutomatedDouble;
+
+typedef struct GameSoundInstanceStruct GameSoundInstance;
+
+typedef struct SoundModifySectionContextStruct
+{
+    GameSoundInstance* _sound;
+    double _sampleTimeSeconds; // Current audio track second at which this modification is taking place.
+    double _singleFrameDurationSeconds; // Duration of a single audio frame, in seconds.
+    float* SampleBuffer;
+    size_t _sampleCount; // Number of samples in the sample buffer.
+    size_t _modifyCount; // Number of samples to modify in this operation.
+    size_t _startIndex; // Start index in the sample buffer from which to modify.
+    AudioFormat _targetFormat; // The format into which the audio is being modifier to (destination format).
+} SoundModifySectionContext;
+
+typedef struct GameSoundStruct
+{
+    float* _samples;
+    size_t _sampleCount;
+    AudioFormat _format;
+} GameSound;
+
+typedef struct ISoundModifierVTableStruct
+{
+    void* Self;
+
+    /* The modify function returns whether the modifier has an active tail. */
+    bool (*_modify)(void* self, SoundModifySectionContext* context); 
+    void (*_resetState)(void* self); // Resets modifier related state.
+
+} ISoundModifierVTable;
+
+typedef struct ISoundModifierStruct
+{
+    ISoundModifierVTable _vtable;
+} ISoundModifier;
+
+typedef struct SampleProviderStruct
+{
+    SoundAutomatedDouble _sampleRate;
+    SoundAutomatedFloat _volume;
+    SoundAutomatedFloat _pan; // [-1 left, 0 middle, 1 right]
+    GenericBuffer* _modifiers;
+} SampleProvider;
+
+typedef Error (*AudioCommandFunction)(AudioTrack* track, void* userData);
+
+typedef struct AudioCommandStruct
+{
+    unsigned char _userData[INLINE_AUDIO_COMMAND_USER_DATA_SIZE];
+    AudioCommandFunction _function;
+} AudioCommand;
+
+typedef enum SoundInstanceStateEnum
+{
+    SoundInstanceState_Playing,
+    SoundInstanceState_Paused, 
+    SoundInstanceState_Ended,
+} SoundInstanceState;
+
+struct GameSoundInstanceStruct
+{
+    GameSound* _source;
+    SoundInstanceState _state;
+    double _sampleIndex;
+    SoundAutomatedDouble _sampleSpeed;
+    SampleProvider _sampleProperties;
+    bool _isLooped;
+    AudioCommand _loopCommand; // Ran when the audio loops (forwards or backwards).
+    AudioCommand _endCommand ; // Ran when the audio ends (tail from modifiers not accounted for).
+};
+
+typedef struct ReverbSoundModifierStruct
+{
+    /* To fill in. */
+} ReverbSoundModifier;
+
+typedef enum BiQuadPassTypeEnum
+{
+    BiQuadPassType_Low,
+    BiQuadPassType_High,
+} BiQuadPassTypeEnum;
+
+typedef struct BiQuadPassSoundModifierStruct
+{
+    /* To fill in. */
+} BiQuadPassSoundModifier;
+
+typedef struct BitCrusherModifierStruct
+{
+    /* To fill in. */
+} BitCrusherModifier;
+
+typedef struct AudioTrackStruct AudioTrack;
+
+typedef struct AudioEngineStruct AudioEngine;
+
+typedef Error (*SoundInstanceInitializer)(GameSoundInstance* soundInstance, void* userData);
+
+
+// Functions.
+
+// Audio Engine.
+Error AudioEngine_Construct1(AudioEngine** outEngine);
+
+Error AudioEngine_Deconstruct(AudioEngine* self);
+
+AudioFormat AudioEngine_GetAudioFormat(AudioEngine* self);
+
+AudioTrack* AudioEngine_GetMasterTrack(AudioEngine* self);
+
+/* The number of seconds the latest callback to the audio buffer fill operation took. */
+double AudioEngine_GetBufferFillDurationSeconds(AudioEngine* self);
+
+static inline double AudioEngine_GetSecondsPerFrame(AudioEngine* self)
+{
+    return 1.0 / (double)AudioEngine_GetAudioFormat(self).SampleRate;
+}
+
+
+// Audio Track.
+SampleProvider* AudioTrack_GetProperties(AudioTrack* self);
+
+Error AudioTrack_CreateSubTrack(AudioTrack* self, AudioTrack** outSubTrack);
+
+Error AudioTrack_RemoveSubTrack(AudioTrack* self, AudioTrack* subTrackToRemove);
+
+Error AudioTrack_GetSubTracks(AudioTrack* self, GenericBuffer* outTrackPointers);
+
+size_t AudioTrack_GetSoundInstanceCount(AudioTrack* self);
+
+/* The current time, in seconds, of this audio track. */
+double AudioTrack_GetCurrentSecond(AudioTrack* self);
+
+/* Creates a new sound instance and instantly (in this method call) calls the initializer on it.
+* Writes out the created instance. */
+Error AudioTrack_CreateSoundInstance(AudioTrack* self,
+    GameSound* sourceSound,
+    SoundInstanceInitializer initializer,
+    GameSoundInstance** outSoundInstance);
+
+/* Removes a sound from the track. Does not error if the sound isn't present, instead a bool is returned indicating that. */
+Error AudioTrack_RemoveSoundInstance(AudioTrack* self, GameSoundInstance* soundInstance, bool* wasRemoved);
+
+/* The second in track timeline is the second at which this command it to be executed. */
+Error AudioTrack_ScheduleCommand(AudioTrack* self, double secondInTrackTimeline, AudioCommand* command);
+
+
+
+// Sound modifiers.
+static inline bool ISoundModifier_Modify(ISoundModifier* self, SoundModifySectionContext* context)
+{
+    return self->_vtable._modify(self->_vtable.Self, context);
+}
+
+static inline void ISoundModifier_ResetState(ISoundModifier* self)
+{
+    self->_vtable._resetState(self->_vtable.Self);
+}
+
+
+// Automated values.
+
+/* Automated values prohibit infinity and NaN. */
+
+Error AutomatedFloat_SetValue(SoundAutomatedFloat* value, float newTarget, double changeDurationSeconds);
+
+Error AutomatedDouble_SetValue(SoundAutomatedDouble* value, double newTarget, double changeDurationSeconds);
+
+
+// Sample provider.
+static inline SoundAutomatedDouble* SampleProvider_GetSampleRate(SampleProvider* self)
+{
+    return &self->_sampleRate;
+}
+
+static inline SoundAutomatedFloat* SampleProvider_GetPan(SampleProvider* self)
+{
+    return &self->_pan;
+}
+
+static inline SoundAutomatedFloat* SampleProvider_GetVolume(SampleProvider* self)
+{
+    return &self->_volume;
+}
+
+/* Modifier must be kept alive through the entirety of the sample provider's lifetime. */
+Error SampleProvider_AddModifier(SampleProvider* self, ISoundModifier* modifier);
+
+Error SampleProvider_RemoveModifier(SampleProvider* self, ISoundModifier* modifier);
+
+Error SampleProvider_ClearModifiers(SampleProvider* self);
+
+
+// Sounds.
+/* Sound does not own the audio samples, only borrows them. */
+Error GameSound_Construct1(GameSound* self, float* samples, size_t sampleCount, AudioFormat format);
+
+Error GameSound_Deconstruct(GameSound* self);
+
+
+// Sound instances.
+Error GameSoundInstance_SetSampleIndex(GameSoundInstance* self, double sampleIndex);
+
+static inline double GameSoundInstance_GetSampleIndex(GameSoundInstance* self)
+{
+    return self->_sampleIndex;
+}
+
+Error GameSoundInstance_SetSampleSecond(GameSoundInstance* self, double second);
+
+static inline double GameSoundInstance_GetSampleSecond(GameSoundInstance* self)
+{
+    return self->_sampleIndex / (double)self->_source->_format.SampleRate;
+}
+
+static inline bool GameSoundInstance_GetIsLooped(GameSoundInstance* self)
+{
+    return self->_isLooped;
+}
+
+static inline Error GameSoundInstance_SetIsLooped(GameSoundInstance* self, bool value)
+{
+    self->_isLooped = value;
+    return Error_CreateSuccess();
+}
+
+static inline SoundAutomatedDouble* GameSoundInstance_GetSampleSpeed(GameSoundInstance* self)
+{
+    return &self->_sampleSpeed;
+}
+
+static inline SampleProvider* GameSoundInstance_GetSampleProperties(GameSoundInstance* self)
+{
+    return &self->_sampleProperties;
+}
+
+static inline Error GameSoundInstance_SetEndCommand(GameSoundInstance* self, AudioCommand* command)
+{
+    self->_endCommand = *command;
+    return Error_CreateSuccess();
+}
+
+static inline Error GameSoundInstance_SetLoopCommand(GameSoundInstance* self, AudioCommand* command)
+{
+    self->_loopCommand = *command;
+    return Error_CreateSuccess();
+}
+
+static inline SoundInstanceState GameSoundInstance_GetState(GameSoundInstance* self)
+{
+    return self->_state;
+}
+
+static inline Error GameSoundInstance_SetState(GameSoundInstance* self, SoundInstanceState state)
+{
+    self->_state = state;
+    return Error_CreateSuccess();
+}
