@@ -51,6 +51,7 @@ typedef struct TrackSoundSlotStruct
     atomic_bool _isPendingRemove;
     bool _hasModifierTail;
     bool _endCommandRan;
+    bool _tailEndCommandRan;
 } TrackSoundSlot;
 
 typedef struct AudioThreadOperationStruct
@@ -499,7 +500,30 @@ static void ResetSoundEndStateIfPlaying(TrackSoundSlot* soundSlot)
     if (soundSlot->Instance->_state == SoundInstanceState_Playing)
     {
         soundSlot->_endCommandRan = false;
+        soundSlot->_tailEndCommandRan = false;
     }
+}
+
+static Error ProcessTailEndAfterModifiers(TrackSoundSlot* soundSlot, AudioTrack* track)
+{
+    if ((soundSlot->Instance->_state != SoundInstanceState_Ended) || soundSlot->_hasModifierTail)
+    {
+        return Error_CreateSuccess();
+    }
+    if (soundSlot->_tailEndCommandRan)
+    {
+        return Error_CreateSuccess();
+    }
+
+    soundSlot->_tailEndCommandRan = true;
+    Error Result = ExecuteCommand(track, &soundSlot->Instance->_tailEndCommand);
+    if (Result.Code != ErrorCode_Success)
+    {
+        return Result;
+    }
+
+    ResetSoundEndStateIfPlaying(soundSlot);
+    return Error_CreateSuccess();
 }
 
 static Error ProcessLoopOrEndBeforeSampling(TrackSoundSlot* soundSlot, AudioTrack* track)
@@ -1079,6 +1103,12 @@ static Error MixSingleSoundFrame(TrackSoundSlot* soundSlot, AudioTrack* track, f
     }
     soundSlot->_hasModifierTail = HasModifierTail;
 
+    Result = ProcessTailEndAfterModifiers(soundSlot, track);
+    if (Result.Code != ErrorCode_Success)
+    {
+        return Result;
+    }
+
     ApplyPanAndVolume(&FrameSamples[0],
         &FrameSamples[1],
         Instance->_sampleProperties._volume._currentValue,
@@ -1535,6 +1565,7 @@ Error AudioTrack_CreateSoundInstance(AudioTrack* self,
     SoundInstance->_isLooped = false;
     Memory_Zero(&SoundInstance->_loopCommand, sizeof(AudioCommand));
     Memory_Zero(&SoundInstance->_endCommand, sizeof(AudioCommand));
+    Memory_Zero(&SoundInstance->_tailEndCommand, sizeof(AudioCommand));
 
     if (initializer != NULL)
     {

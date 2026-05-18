@@ -43,6 +43,9 @@
  * 
  * Sounds, after being added to the audio track, are automatically removed from it once they end and no
  * modifiers for them are leaving tails anymore.
+ * AudioTrack_GetCurrentSecond returns an atomic snapshot of the track timeline at a sample boundary.
+ * If queried while a buffer is currently being filled, it may observe either the boundary before or after the
+ * sample currently being mixed, but it never reports a partial in-between sample time.
  * 
  * Panning additionally changes volume to adjust for perceived loudness.
  */
@@ -160,6 +163,7 @@ struct GameSoundInstanceStruct
     bool _isLooped;
     AudioCommand _loopCommand; // Ran when the audio loops (forwards or backwards).
     AudioCommand _endCommand ; // Ran when the audio ends (tail from modifiers not accounted for).
+    AudioCommand _tailEndCommand; // Ran when the sound and all modifier tail have ended.
 };
 
 typedef struct ReverbSoundModifierStruct
@@ -245,7 +249,7 @@ Error AudioTrack_GetSubTracks(AudioTrack* self, GenericBuffer* outTrackPointers)
 
 size_t AudioTrack_GetSoundInstanceCount(AudioTrack* self);
 
-/* The current time, in seconds, of this audio track. */
+/* The current time, in seconds, of this audio track as an atomic sample-boundary snapshot. */
 double AudioTrack_GetCurrentSecond(AudioTrack* self);
 
 /* Creates a new sound instance and instantly (in this method call) calls the initializer on it.
@@ -387,6 +391,12 @@ static inline SampleProvider* GameSoundInstance_GetSampleProperties(GameSoundIns
 static inline Error GameSoundInstance_SetEndCommand(GameSoundInstance* self, AudioCommand* command)
 {
     self->_endCommand = *command;
+    return Error_CreateSuccess();
+}
+
+static inline Error GameSoundInstance_SetTailEndCommand(GameSoundInstance* self, AudioCommand* command)
+{
+    self->_tailEndCommand = *command;
     return Error_CreateSuccess();
 }
 
