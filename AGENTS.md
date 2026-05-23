@@ -57,6 +57,7 @@ The modules are (in alphabetical order):
 - WRGHDF: A binary file format to store data in, like game saves and such. Used for saving binary data to the disk.
 - WRHash: Hashcode creation functions.
 - WRHashMap: A generic map data structure.
+- WRInt32Vector: 32bit integer vector.
 - WRIO: IO streams like in C# and Java.
 - WRJSON: JSON reading, writing and handling.
 - WRList: An interface for lists.
