@@ -176,6 +176,7 @@ typedef struct ReverbSoundModifierStruct
     SoundAutomatedFloat Damping;
     float* _delayBuffer;
     size_t _delayBufferFrameCount;
+    size_t _activeDelayBufferFrameCount;
     size_t _delayBufferWriteFrameIndex;
     float _previousLowPassLeft;
     float _previousLowPassRight;

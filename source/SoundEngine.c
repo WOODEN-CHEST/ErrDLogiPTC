@@ -317,17 +317,62 @@ static void InitializeSampleProvider(SampleProvider* self,
     InitializeAutomatedFloat(&self->_pan, pan);
 }
 
+static void InitializeLazyBuffer(GenericBuffer* buffer, size_t elementSize)
+{
+    GenericBuffer_AllocateVariable(buffer, 0U, elementSize);
+}
+
+static bool EnsureBufferAdditionalCapacity(GenericBuffer* buffer, size_t initialCapacity, size_t additionalElementCount)
+{
+    if (additionalElementCount == 0U)
+    {
+        return true;
+    }
+
+    size_t RequiredCount = buffer->_count + additionalElementCount;
+    if (RequiredCount < buffer->_count)
+    {
+        return false;
+    }
+
+    if (buffer->_capacity == 0U)
+    {
+        size_t InitialRequiredCount = initialCapacity;
+        if (InitialRequiredCount < RequiredCount)
+        {
+            InitialRequiredCount = RequiredCount;
+        }
+
+        return GenericBuffer_EnsureTotalCapacity(buffer, InitialRequiredCount);
+    }
+
+    return GenericBuffer_EnsureTotalCapacity(buffer, RequiredCount);
+}
+
+static void ResetReverbDelayState(ReverbSoundModifier* self)
+{
+    size_t DelayBufferFloatCount = self->_delayBufferFrameCount * AUDIO_ENGINE_OUTPUT_CHANNEL_COUNT;
+    if ((self->_delayBuffer != NULL) && (DelayBufferFloatCount > 0U))
+    {
+        Memory_Zero(self->_delayBuffer, sizeof(float) * DelayBufferFloatCount);
+    }
+
+    self->_delayBufferWriteFrameIndex = 0U;
+    self->_previousLowPassLeft = 0.0f;
+    self->_previousLowPassRight = 0.0f;
+}
+
 static Error InitializeTrack(AudioEngine* engine, AudioTrack* track, AudioTrack* parentTrack)
 {
     Memory_Zero(track, sizeof(*track));
     track->Engine = engine;
     track->ParentTrack = parentTrack;
-    GenericBuffer_AllocateVariable(&track->_publicModifierBuffer, AUDIO_ENGINE_INITIAL_MODIFIER_CAPACITY, sizeof(ISoundModifier*));
-    GenericBuffer_AllocateVariable(&track->_activeModifierBuffer, AUDIO_ENGINE_INITIAL_MODIFIER_CAPACITY, sizeof(ISoundModifier*));
-    GenericBuffer_AllocateVariable(&track->_publicSubTrackBuffer, AUDIO_ENGINE_INITIAL_SUBTRACK_CAPACITY, sizeof(AudioTrack*));
-    GenericBuffer_AllocateVariable(&track->_activeSubTrackBuffer, AUDIO_ENGINE_INITIAL_SUBTRACK_CAPACITY, sizeof(AudioTrack*));
-    GenericBuffer_AllocateVariable(&track->_activeSoundBuffer, AUDIO_ENGINE_INITIAL_SOUND_CAPACITY, sizeof(TrackSoundSlot*));
-    GenericBuffer_AllocateVariable(&track->_scheduledCommandBuffer, AUDIO_ENGINE_INITIAL_COMMAND_CAPACITY, sizeof(ScheduledAudioCommand));
+    InitializeLazyBuffer(&track->_publicModifierBuffer, sizeof(ISoundModifier*));
+    InitializeLazyBuffer(&track->_activeModifierBuffer, sizeof(ISoundModifier*));
+    InitializeLazyBuffer(&track->_publicSubTrackBuffer, sizeof(AudioTrack*));
+    InitializeLazyBuffer(&track->_activeSubTrackBuffer, sizeof(AudioTrack*));
+    InitializeLazyBuffer(&track->_activeSoundBuffer, sizeof(TrackSoundSlot*));
+    InitializeLazyBuffer(&track->_scheduledCommandBuffer, sizeof(ScheduledAudioCommand));
     InitializeSampleProvider(&track->_properties,
         &track->_publicModifierBuffer,
         engine,
@@ -423,6 +468,10 @@ static ComparisonResult CompareScheduledCommands(GenericBuffer* buffer,
 
 static Error InsertScheduledCommand(AudioTrack* track, ScheduledAudioCommand scheduledCommand)
 {
+    if (!EnsureBufferAdditionalCapacity(&track->_scheduledCommandBuffer, AUDIO_ENGINE_INITIAL_COMMAND_CAPACITY, 1U))
+    {
+        return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to reserve scheduled audio command storage.");
+    }
     if (!GenericBuffer_AddLast(&track->_scheduledCommandBuffer, &scheduledCommand))
     {
         return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to append scheduled audio command.");
@@ -609,16 +658,18 @@ static bool ReverbSoundModifier_ModifyInternal(void* selfPointer, SoundModifySec
         DelayFrames = 1U;
     }
 
-    if (Self->_delayBufferFrameCount != DelayFrames)
+    if (Self->_delayBufferFrameCount < DelayFrames)
     {
-        Memory_Free(Self->_delayBuffer);
-        Self->_delayBuffer = Memory_Allocate(sizeof(float) * DelayFrames * AUDIO_ENGINE_OUTPUT_CHANNEL_COUNT);
-        Memory_Zero(Self->_delayBuffer, sizeof(float) * DelayFrames * AUDIO_ENGINE_OUTPUT_CHANNEL_COUNT);
+        Self->_delayBuffer = Memory_Reallocate(Self->_delayBuffer,
+            sizeof(float) * DelayFrames * AUDIO_ENGINE_OUTPUT_CHANNEL_COUNT);
         Self->_delayBufferFrameCount = DelayFrames;
-        Self->_delayBufferWriteFrameIndex = 0U;
-        Self->_previousLowPassLeft = 0.0f;
-        Self->_previousLowPassRight = 0.0f;
+        ResetReverbDelayState(Self);
     }
+    else if ((Self->_activeDelayBufferFrameCount != DelayFrames) && (Self->_delayBuffer != NULL))
+    {
+        ResetReverbDelayState(Self);
+    }
+    Self->_activeDelayBufferFrameCount = DelayFrames;
 
     bool HasTail = false;
     for (size_t i = 0; i < FrameCount; i++)
@@ -651,7 +702,7 @@ static bool ReverbSoundModifier_ModifyInternal(void* selfPointer, SoundModifySec
             + (Self->_previousLowPassLeft * ClampFloat(Self->Feedback._currentValue, 0.0f, 0.999f));
         Self->_delayBuffer[DelayBaseIndex + 1U] = InputRight
             + (Self->_previousLowPassRight * ClampFloat(Self->Feedback._currentValue, 0.0f, 0.999f));
-        Self->_delayBufferWriteFrameIndex = (Self->_delayBufferWriteFrameIndex + 1U) % Self->_delayBufferFrameCount;
+        Self->_delayBufferWriteFrameIndex = (Self->_delayBufferWriteFrameIndex + 1U) % Self->_activeDelayBufferFrameCount;
 
         if (HasModifierSignal(Self->_delayBuffer[DelayBaseIndex], Self->_delayBuffer[DelayBaseIndex + 1U])
             || HasModifierSignal(Self->_previousLowPassLeft, Self->_previousLowPassRight))
@@ -666,14 +717,7 @@ static bool ReverbSoundModifier_ModifyInternal(void* selfPointer, SoundModifySec
 static void ReverbSoundModifier_ResetStateInternal(void* selfPointer)
 {
     ReverbSoundModifier* Self = selfPointer;
-    if (Self->_delayBuffer != NULL)
-    {
-        Memory_Zero(Self->_delayBuffer,
-            sizeof(float) * Self->_delayBufferFrameCount * AUDIO_ENGINE_OUTPUT_CHANNEL_COUNT);
-    }
-    Self->_delayBufferWriteFrameIndex = 0U;
-    Self->_previousLowPassLeft = 0.0f;
-    Self->_previousLowPassRight = 0.0f;
+    ResetReverbDelayState(Self);
 }
 
 static bool BiQuadPassSoundModifier_ModifyInternal(void* selfPointer, SoundModifySectionContext* context)
@@ -838,6 +882,10 @@ static Error InsertModifier(GenericBuffer* buffer, ISoundModifier* modifier, siz
     {
         return Error_Construct3(ErrorCode_IndexOutOfBounds, u8"Modifier index %zu is out of bounds.", index);
     }
+    if (!EnsureBufferAdditionalCapacity(buffer, AUDIO_ENGINE_INITIAL_MODIFIER_CAPACITY, 1U))
+    {
+        return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to reserve sound modifier storage.");
+    }
     if (!GenericBuffer_Insert(buffer, &modifier, index))
     {
         return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to insert sound modifier.");
@@ -900,6 +948,10 @@ static void RemoveSoundSlotAt(AudioTrack* track, size_t index)
 static Error AttachSoundSlot(AudioTrack* track, TrackSoundSlot* soundSlot)
 {
     soundSlot->OwningTrack = track;
+    if (!EnsureBufferAdditionalCapacity(&track->_activeSoundBuffer, AUDIO_ENGINE_INITIAL_SOUND_CAPACITY, 1U))
+    {
+        return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to reserve attached sound storage.");
+    }
     if (!GenericBuffer_AddLast(&track->_activeSoundBuffer, &soundSlot))
     {
         return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to attach sound instance to track.");
@@ -912,6 +964,10 @@ static Error AttachSoundSlot(AudioTrack* track, TrackSoundSlot* soundSlot)
 
 static Error AttachSubTrack(AudioTrack* parent, AudioTrack* child)
 {
+    if (!EnsureBufferAdditionalCapacity(&parent->_activeSubTrackBuffer, AUDIO_ENGINE_INITIAL_SUBTRACK_CAPACITY, 1U))
+    {
+        return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to reserve audio subtrack storage.");
+    }
     if (!GenericBuffer_AddLast(&parent->_activeSubTrackBuffer, &child))
     {
         return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to attach audio subtrack.");
@@ -1314,7 +1370,7 @@ Error AudioEngine_Construct1(AudioEngine** outEngine)
     atomic_store(&Engine->_operationQueue.WriteIndex, 0U);
     atomic_store(&Engine->_operationQueue.ReadIndex, 0U);
     atomic_store(&Engine->_bufferFillDurationNanoseconds, 0U);
-    GenericBuffer_AllocateVariable(&Engine->_publicSoundRegistry, AUDIO_ENGINE_INITIAL_REGISTRY_CAPACITY, sizeof(TrackSoundSlot*));
+    InitializeLazyBuffer(&Engine->_publicSoundRegistry, sizeof(TrackSoundSlot*));
 
     Error Result = InitializeTrack(Engine, &Engine->_masterTrack, NULL);
     if (Result.Code != ErrorCode_Success)
@@ -1414,6 +1470,12 @@ Error AudioTrack_CreateSubTrack(AudioTrack* self, AudioTrack** outSubTrack)
         return Result;
     }
 
+    if (!EnsureBufferAdditionalCapacity(&self->_publicSubTrackBuffer, AUDIO_ENGINE_INITIAL_SUBTRACK_CAPACITY, 1U))
+    {
+        DeconstructTrack(SubTrack);
+        Memory_Free(SubTrack);
+        return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to reserve public audio subtrack storage.");
+    }
     if (!GenericBuffer_AddLast(&self->_publicSubTrackBuffer, &SubTrack))
     {
         DeconstructTrack(SubTrack);
@@ -1541,8 +1603,8 @@ Error AudioTrack_CreateSoundInstance(AudioTrack* self,
     GameSoundInstance* SoundInstance = Memory_Allocate(sizeof(GameSoundInstance));
     Memory_Zero(SoundSlot, sizeof(*SoundSlot));
     Memory_Zero(SoundInstance, sizeof(*SoundInstance));
-    GenericBuffer_AllocateVariable(&SoundSlot->_publicModifierBuffer, AUDIO_ENGINE_INITIAL_MODIFIER_CAPACITY, sizeof(ISoundModifier*));
-    GenericBuffer_AllocateVariable(&SoundSlot->_activeModifierBuffer, AUDIO_ENGINE_INITIAL_MODIFIER_CAPACITY, sizeof(ISoundModifier*));
+    InitializeLazyBuffer(&SoundSlot->_publicModifierBuffer, sizeof(ISoundModifier*));
+    InitializeLazyBuffer(&SoundSlot->_activeModifierBuffer, sizeof(ISoundModifier*));
 
     SoundSlot->Instance = SoundInstance;
     SoundSlot->OwningTrack = self;
@@ -1580,6 +1642,14 @@ Error AudioTrack_CreateSoundInstance(AudioTrack* self,
         }
     }
 
+    if (!EnsureBufferAdditionalCapacity(&self->Engine->_publicSoundRegistry, AUDIO_ENGINE_INITIAL_REGISTRY_CAPACITY, 1U))
+    {
+        Memory_Free(SoundSlot->_publicModifierBuffer._data);
+        Memory_Free(SoundSlot->_activeModifierBuffer._data);
+        Memory_Free(SoundInstance);
+        Memory_Free(SoundSlot);
+        return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to reserve sound registry storage.");
+    }
     if (!GenericBuffer_AddLast(&self->Engine->_publicSoundRegistry, &SoundSlot))
     {
         Memory_Free(SoundSlot->_publicModifierBuffer._data);
