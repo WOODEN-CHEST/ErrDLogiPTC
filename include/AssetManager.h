@@ -1,7 +1,6 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
-#include "wr/WRHashMap.h"
 #include "wr/WRError.h"
 #include "wr/WRMemory.h"
 
@@ -9,53 +8,56 @@
 
 typedef uint64_t AssetTypeID;
 
-typedef struct AssetTypeStruct
+typedef struct AssetManagerStruct AssetManager;
+
+typedef Error (*AssetDefinitionConstructor)();
+
+typedef struct AssetDefinitionVTableStruct
 {
-    AssetTypeID _id;
-    const unsigned char* _typeName;
-    const unsigned char* _directoryName;
-} AssetType;
+    void* Self;
 
-typedef struct AssetTypeRegistryStruct
-{
-    AssetTypeID _nextAvailableAssetTypeID;
-    GenericBuffer _assetTypes;
-} AssetTypeRegistry;
-
-
+} AssetDefinitionVTable;
 
 typedef struct AssetDefinitionStruct
 {
     void* Self;
-    AssetTypeID _type;
+    AssetDefinitionVTable _vtable;
 } AssetDefinition;
 
-typedef struct AnimationDefinitionStruct
+typedef struct AnimationDefinitionStruct AnimationDefinition;
+
+/* Does not include ALL asset types, just the most commonly used ones. */
+typedef struct StandardAssetTypes
 {
-
-} AnimationDefinition;
-
-
-
-typedef struct AssetManagerStruct
-{
-
-} AssetManager;
-
+    AssetTypeID SpriteSheet;
+    AssetTypeID SpriteAnimation;
+    AssetTypeID Sound;
+    AssetTypeID Font;
+    AssetTypeID Shader;
+};
 
 
 // Functions.
-Error AssetTypeRegistry_Construct1(AssetTypeRegistry* self);
+Error AssetManager_Construct1(AssetManager** outSelf);
 
-Error AssetTypeRegistry_Deconstruct(AssetTypeRegistry* self);
+Error AssetManager_Deconstruct(AssetManager* self);
 
-Error AssetTypeRegistry_RegisterAssetType(AssetTypeRegistry* self,
-    const unsigned char* typeName,
+/* Strings are copied, references do not need to be kept after this method call. */
+Error AssetManager_CreateAssetType(AssetManager* self,
+    const unsigned char* name,
     const unsigned char* directoryName,
     AssetTypeID* outID);
 
-Error AssetTypeRegistry_UnregisterAssetType(AssetTypeRegistry* self, AssetTypeID* outID);
+Error AssetManager_CreateStandardAssetTypes(AssetManager* self);
 
-Error AssetTypeREgistry_GetAssetTypeInfo(AssetTypeRegistry* self, AssetTypeID id, AssetType* outInfo);
+Error AssetManager_RemoveAssetType(AssetManager* self, AssetTypeID id);
 
+Error AssetManager_GetAssetTypeDirectoryName(AssetManager* self, AssetTypeID id, const unsigned char** outName);
 
+Error AssetManager_GetAssetTypeName(AssetManager* self, AssetTypeID id, const unsigned char** outName);
+
+Error AssetManager_ReadDefinitions(AssetManager* self, const unsigned char* directory);
+
+Error AssetManager_SetDefinition(AssetManager* self, AssetDefinition* definition);
+
+Error AssetManager_RemoveDefinition(AssetManager* self, AssetDefinition* definition);
