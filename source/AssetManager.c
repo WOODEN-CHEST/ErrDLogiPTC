@@ -1,9 +1,11 @@
 #include "AssetManager.h"
 #include "AssetTypesStandard.h"
 #include "wr/WRHashMap.h"
+#include "wr/WRHashSet.h"
 #include "wr/WRArrayList.h"
 #include "wr/WRList.h"
 #include "wr/WRMap.h"
+#include "wr/WRSet.h"
 #include "wr/WRCollection.h"
 #include "wr/WRHash.h"
 #include "wr/WRBufferPool.h"
@@ -48,7 +50,7 @@ typedef struct LoadedAssetRecordStruct
     AssetTypeID Type;
     unsigned char* Name;        // owned; the map key aliases this
     LoadedAsset Loaded;
-    HashMap Holders;            // set of AssetUserID (value is a presence byte)
+    HashSet Holders;            // set of AssetUserID
     AssetUserID DependencyUser; // user under which this asset's dependencies are held
 } LoadedAssetRecord;
 
@@ -111,7 +113,7 @@ struct AssetManagerStruct
     HashMap _loadedAssets;       // AssetKey -> LoadedAssetRecord*
     ArrayList _searchRoots;      // unsigned char* (owned)
     ArrayList _referenceBlobs;   // ReferenceBlob* (owned)
-    HashMap _activeUsers;        // set of AssetUserID (value is a presence byte)
+    HashSet _activeUsers;        // set of AssetUserID
     AssetUserID _nextUserID;
     AssetTypeID _nextTypeID;
     WRBufferPool _bufferPool;
@@ -174,43 +176,41 @@ static bool CompareAssetKey(IMap* map, const void* key1, const void* key2, const
     return StringsEqual(KeyA->Name, KeyB->Name);
 }
 
-/* AssetUserID sets are backed by a HashMap used as a set (the WRSet/WRHashSet modules are not present in
-   the linked WR build). The value is an unused presence byte. */
-static HashCode HashUserIDKey(IMap* map, const void* key, const UserData* userData)
+/* AssetUserID sets are backed by a HashSet, wrapped in small helpers for the typed uint64 element. */
+static HashCode HashUserID(ISet* set, const void* element, const UserData* userData)
 {
-    (void)map;
+    (void)set;
     (void)userData;
-    return Hash_UInt64(*(const uint64_t*)key);
+    return Hash_UInt64(*(const uint64_t*)element);
 }
 
-static Error ConstructUserSet(HashMap* set)
+static Error ConstructUserSet(HashSet* set)
 {
-    HashMapConstructOptions Options = HashMapConstructOptions_CreateDefault(sizeof(AssetUserID), sizeof(uint8_t), HashUserIDKey);
-    return HashMap_Construct1(set, Options);
+    HashSetConstructOptions Options = HashSetConstructOptions_CreateDefault(sizeof(AssetUserID), HashUserID);
+    return HashSet_Construct1(set, Options);
 }
 
-static Error UserSetAdd(HashMap* set, AssetUserID user, bool* outAdded)
+static Error UserSetAdd(HashSet* set, AssetUserID user, bool* outAdded)
 {
-    uint8_t Present = 1U;
-    return IMap_Add(HashMap_AsMap(set), &user, &Present, outAdded);
+    return ISet_Add(HashSet_AsSet(set), &user, outAdded);
 }
 
-static Error UserSetRemove(HashMap* set, AssetUserID user, bool* outRemoved)
+static Error UserSetRemove(HashSet* set, AssetUserID user, bool* outRemoved)
 {
-    return IMap_Remove(HashMap_AsMap(set), &user, outRemoved);
+    return ISet_Remove(HashSet_AsSet(set), &user, outRemoved);
 }
 
-static bool UserSetContains(HashMap* set, AssetUserID user)
+static bool UserSetContains(HashSet* set, AssetUserID user)
 {
     bool Contains = false;
-    Error Result = IMap_ContainsKey(HashMap_AsMap(set), &user, &Contains);
+    Error Result = ISet_Contains(HashSet_AsSet(set), &user, &Contains);
     if (Result.Code != ErrorCode_Success) { Error_Deconstruct(&Result); return false; }
     return Contains;
 }
 
-static size_t UserSetCount(HashMap* set)
+static size_t UserSetCount(HashSet* set)
 {
-    return IMap_GetEntryCount(HashMap_AsMap(set));
+    return ISet_GetElementCount(HashSet_AsSet(set));
 }
 
 static IList* TypesList(AssetManager* self)
@@ -529,7 +529,7 @@ static Error UnloadRecord(AssetManager* self, LoadedAssetRecord* record)
 
     RemoveActiveUser(self, record->DependencyUser);
 
-    Error DeconstructResult = HashMap_Deconstruct(&record->Holders);
+    Error DeconstructResult = HashSet_Deconstruct(&record->Holders);
     Memory_Free(record->Name);
     Memory_Free(record);
 
@@ -936,7 +936,7 @@ Error AssetManager_Construct1(AssetManager** outSelf)
     Result = BufferPool_Construct1(&Self->_bufferPool);
     if (Result.Code != ErrorCode_Success)
     {
-        HashMap_Deconstruct(&Self->_activeUsers);
+        HashSet_Deconstruct(&Self->_activeUsers);
         HashMap_Deconstruct(&Self->_loadedAssets);
         HashMap_Deconstruct(&Self->_definitions);
         ArrayList_Deconstruct(&Self->_types);
@@ -1060,7 +1060,7 @@ Error AssetManager_Deconstruct(AssetManager* self)
 
     HashMap_Deconstruct(&self->_definitions);
     HashMap_Deconstruct(&self->_loadedAssets);
-    HashMap_Deconstruct(&self->_activeUsers);
+    HashSet_Deconstruct(&self->_activeUsers);
     ArrayList_Deconstruct(&self->_types);
     ArrayList_Deconstruct(&self->_searchRoots);
     ArrayList_Deconstruct(&self->_referenceBlobs);
@@ -1827,7 +1827,7 @@ Error AssetManager_LoadAssetSingle(AssetManager* self, AssetTypeID assetType, co
         Error ReleaseResult = ReleaseAllForUser(self, DependencyUser);
         Error_Deconstruct(&ReleaseResult);
         RemoveActiveUser(self, DependencyUser);
-        Error DeconstructResult = HashMap_Deconstruct(&Record->Holders);
+        Error DeconstructResult = HashSet_Deconstruct(&Record->Holders);
         Error_Deconstruct(&DeconstructResult);
         Memory_Free(Record->Name);
         Memory_Free(Record);
@@ -1843,7 +1843,7 @@ Error AssetManager_LoadAssetSingle(AssetManager* self, AssetTypeID assetType, co
         Error ReleaseResult = ReleaseAllForUser(self, DependencyUser);
         Error_Deconstruct(&ReleaseResult);
         RemoveActiveUser(self, DependencyUser);
-        Error DeconstructResult = HashMap_Deconstruct(&Record->Holders);
+        Error DeconstructResult = HashSet_Deconstruct(&Record->Holders);
         Error_Deconstruct(&DeconstructResult);
         Memory_Free(Record->Name);
         Memory_Free(Record);
