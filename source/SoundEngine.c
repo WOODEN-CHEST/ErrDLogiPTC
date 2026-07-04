@@ -447,7 +447,7 @@ static TrackSoundSlot* SampleProvider_GetOwningSoundSlot(SampleProvider* provide
 static ComparisonResult CompareScheduledCommands(GenericBuffer* buffer,
     GenericBufferElementData a,
     GenericBufferElementData b,
-    void* userData)
+    const UserData* userData)
 {
     UNUSED(buffer);
     UNUSED(userData);
@@ -476,7 +476,7 @@ static Error InsertScheduledCommand(AudioTrack* track, ScheduledAudioCommand sch
     {
         return Error_Construct3(ErrorCode_BufferTooLarge, u8"Failed to append scheduled audio command.");
     }
-    if (!GenericBuffer_SortAscending(&track->_scheduledCommandBuffer, CompareScheduledCommands, NULL))
+    if (!GenericBuffer_SortAscendingAllocating(&track->_scheduledCommandBuffer, CompareScheduledCommands, NULL))
     {
         return Error_Construct3(ErrorCode_InvalidOperation, u8"Failed to sort scheduled audio commands.");
     }
@@ -541,7 +541,7 @@ static Error ExecuteCommand(AudioTrack* track, const AudioCommand* command)
         return Error_CreateSuccess();
     }
 
-    return command->_function(track, (void*)command->_userData);
+    return command->_function(track, &command->_userData);
 }
 
 static void ResetSoundEndStateIfPlaying(TrackSoundSlot* soundSlot)
@@ -1584,6 +1584,7 @@ double AudioTrack_GetCurrentSecond(AudioTrack* self)
 Error AudioTrack_CreateSoundInstance(AudioTrack* self,
     GameSound* sourceSound,
     SoundInstanceInitializer initializer,
+    const UserData* initializerUserData,
     GameSoundInstance** outSoundInstance)
 {
     if (self == NULL)
@@ -1631,7 +1632,7 @@ Error AudioTrack_CreateSoundInstance(AudioTrack* self,
 
     if (initializer != NULL)
     {
-        Error Result = initializer(SoundInstance, NULL);
+        Error Result = initializer(SoundInstance, initializerUserData);
         if (Result.Code != ErrorCode_Success)
         {
             Memory_Free(SoundSlot->_publicModifierBuffer._data);
