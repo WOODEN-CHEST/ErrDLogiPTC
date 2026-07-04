@@ -237,3 +237,12 @@ A sound is any audio played in the game. This includes music.
     "location": asset location
 }
 ```
+
+
+## Models.
+
+```
+{
+    "location": asset location
+}
+```
