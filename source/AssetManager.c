@@ -1,14 +1,11 @@
 #include "AssetManager.h"
 #include "AssetTypesStandard.h"
 #include "wr/WRHashMap.h"
-#include "wr/WRHashSet.h"
 #include "wr/WRArrayList.h"
 #include "wr/WRList.h"
 #include "wr/WRMap.h"
-#include "wr/WRSet.h"
 #include "wr/WRCollection.h"
 #include "wr/WRHash.h"
-#include "wr/WRComparator.h"
 #include "wr/WRBufferPool.h"
 #include "wr/WRFileSystem.h"
 #include "wr/WRPath.h"
@@ -51,7 +48,7 @@ typedef struct LoadedAssetRecordStruct
     AssetTypeID Type;
     unsigned char* Name;        // owned; the map key aliases this
     LoadedAsset Loaded;
-    HashSet Holders;            // set of AssetUserID
+    HashMap Holders;            // set of AssetUserID (value is a presence byte)
     AssetUserID DependencyUser; // user under which this asset's dependencies are held
 } LoadedAssetRecord;
 
@@ -114,7 +111,7 @@ struct AssetManagerStruct
     HashMap _loadedAssets;       // AssetKey -> LoadedAssetRecord*
     ArrayList _searchRoots;      // unsigned char* (owned)
     ArrayList _referenceBlobs;   // ReferenceBlob* (owned)
-    HashSet _activeUsers;        // AssetUserID
+    HashMap _activeUsers;        // set of AssetUserID (value is a presence byte)
     AssetUserID _nextUserID;
     AssetTypeID _nextTypeID;
     WRBufferPool _bufferPool;
@@ -147,7 +144,10 @@ static unsigned char* DuplicateString(const unsigned char* source)
 
 static bool StringsEqual(const unsigned char* a, const unsigned char* b)
 {
-    return (Comparator_CompareString(a, b) == ComparisonResult_AEqualsB);
+    bool Equal = false;
+    Error Result = StringUTF8_EqualsExact(a, b, &Equal);
+    if (Result.Code != ErrorCode_Success) { Error_Deconstruct(&Result); return false; }
+    return Equal;
 }
 
 static HashCode HashAssetKey(IMap* map, const void* key, const UserData* userData)
@@ -174,11 +174,43 @@ static bool CompareAssetKey(IMap* map, const void* key1, const void* key2, const
     return StringsEqual(KeyA->Name, KeyB->Name);
 }
 
-static HashCode HashUserID(ISet* set, const void* element, const UserData* userData)
+/* AssetUserID sets are backed by a HashMap used as a set (the WRSet/WRHashSet modules are not present in
+   the linked WR build). The value is an unused presence byte. */
+static HashCode HashUserIDKey(IMap* map, const void* key, const UserData* userData)
 {
-    (void)set;
+    (void)map;
     (void)userData;
-    return Hash_UInt64(*(const uint64_t*)element);
+    return Hash_UInt64(*(const uint64_t*)key);
+}
+
+static Error ConstructUserSet(HashMap* set)
+{
+    HashMapConstructOptions Options = HashMapConstructOptions_CreateDefault(sizeof(AssetUserID), sizeof(uint8_t), HashUserIDKey);
+    return HashMap_Construct1(set, Options);
+}
+
+static Error UserSetAdd(HashMap* set, AssetUserID user, bool* outAdded)
+{
+    uint8_t Present = 1U;
+    return IMap_Add(HashMap_AsMap(set), &user, &Present, outAdded);
+}
+
+static Error UserSetRemove(HashMap* set, AssetUserID user, bool* outRemoved)
+{
+    return IMap_Remove(HashMap_AsMap(set), &user, outRemoved);
+}
+
+static bool UserSetContains(HashMap* set, AssetUserID user)
+{
+    bool Contains = false;
+    Error Result = IMap_ContainsKey(HashMap_AsMap(set), &user, &Contains);
+    if (Result.Code != ErrorCode_Success) { Error_Deconstruct(&Result); return false; }
+    return Contains;
+}
+
+static size_t UserSetCount(HashMap* set)
+{
+    return IMap_GetEntryCount(HashMap_AsMap(set));
 }
 
 static IList* TypesList(AssetManager* self)
@@ -325,21 +357,14 @@ static bool IsUserActive(AssetManager* self, AssetUserID user)
     {
         return false;
     }
-    bool Contains = false;
-    Error Result = ISet_Contains(HashSet_AsSet(&self->_activeUsers), &user, &Contains);
-    if (Result.Code != ErrorCode_Success)
-    {
-        Error_Deconstruct(&Result);
-        return false;
-    }
-    return Contains;
+    return UserSetContains(&self->_activeUsers, user);
 }
 
 static Error MintUser(AssetManager* self, AssetUserID* outUser)
 {
     AssetUserID ID = self->_nextUserID;
     bool WasAdded = false;
-    Error Result = ISet_Add(HashSet_AsSet(&self->_activeUsers), &ID, &WasAdded);
+    Error Result = UserSetAdd(&self->_activeUsers, ID, &WasAdded);
     if (Result.Code != ErrorCode_Success)
     {
         return Result;
@@ -352,7 +377,7 @@ static Error MintUser(AssetManager* self, AssetUserID* outUser)
 static void RemoveActiveUser(AssetManager* self, AssetUserID user)
 {
     bool WasRemoved = false;
-    Error Result = ISet_Remove(HashSet_AsSet(&self->_activeUsers), &user, &WasRemoved);
+    Error Result = UserSetRemove(&self->_activeUsers, user, &WasRemoved);
     Error_Deconstruct(&Result);
 }
 
@@ -391,7 +416,7 @@ static Error RemoveUserFromAllHolders(AssetManager* self, AssetUserID user)
         }
 
         bool WasRemoved = false;
-        Error RemoveResult = ISet_Remove(HashSet_AsSet(&Record->Holders), &user, &WasRemoved);
+        Error RemoveResult = UserSetRemove(&Record->Holders, user, &WasRemoved);
         if (RemoveResult.Code != ErrorCode_Success)
         {
             Result = RemoveResult;
@@ -438,7 +463,7 @@ static Error FindRecord(AssetManager* self, bool anyRecord, LoadedAssetRecord** 
             break;
         }
 
-        if (anyRecord || (ISet_GetElementCount(HashSet_AsSet(&Record->Holders)) == 0))
+        if (anyRecord || (UserSetCount(&Record->Holders) == 0))
         {
             *outRecord = Record;
             break;
@@ -504,7 +529,7 @@ static Error UnloadRecord(AssetManager* self, LoadedAssetRecord* record)
 
     RemoveActiveUser(self, record->DependencyUser);
 
-    Error DeconstructResult = HashSet_Deconstruct(&record->Holders);
+    Error DeconstructResult = HashMap_Deconstruct(&record->Holders);
     Memory_Free(record->Name);
     Memory_Free(record);
 
@@ -896,8 +921,7 @@ Error AssetManager_Construct1(AssetManager** outSelf)
         return Result;
     }
 
-    Result = HashSet_Construct1(&Self->_activeUsers,
-        HashSetConstructOptions_CreateDefault(sizeof(AssetUserID), HashUserID));
+    Result = ConstructUserSet(&Self->_activeUsers);
     if (Result.Code != ErrorCode_Success)
     {
         HashMap_Deconstruct(&Self->_loadedAssets);
@@ -912,7 +936,7 @@ Error AssetManager_Construct1(AssetManager** outSelf)
     Result = BufferPool_Construct1(&Self->_bufferPool);
     if (Result.Code != ErrorCode_Success)
     {
-        HashSet_Deconstruct(&Self->_activeUsers);
+        HashMap_Deconstruct(&Self->_activeUsers);
         HashMap_Deconstruct(&Self->_loadedAssets);
         HashMap_Deconstruct(&Self->_definitions);
         ArrayList_Deconstruct(&Self->_types);
@@ -1036,7 +1060,7 @@ Error AssetManager_Deconstruct(AssetManager* self)
 
     HashMap_Deconstruct(&self->_definitions);
     HashMap_Deconstruct(&self->_loadedAssets);
-    HashSet_Deconstruct(&self->_activeUsers);
+    HashMap_Deconstruct(&self->_activeUsers);
     ArrayList_Deconstruct(&self->_types);
     ArrayList_Deconstruct(&self->_searchRoots);
     ArrayList_Deconstruct(&self->_referenceBlobs);
@@ -1699,19 +1723,16 @@ Error AssetManager_ReleaseAsset(AssetManager* self, AssetTypeID assetType, const
         return Error_Construct3(ErrorCode_InvalidOperation, u8"Asset \"%s\" is not loaded.", name);
     }
 
-    bool Contains = false;
-    Error ContainsResult = ISet_Contains(HashSet_AsSet(&Record->Holders), &user, &Contains);
-    if (ContainsResult.Code != ErrorCode_Success) { return ContainsResult; }
-    if (!Contains)
+    if (!UserSetContains(&Record->Holders, user))
     {
         return Error_Construct3(ErrorCode_InvalidOperation, u8"User does not hold asset \"%s\".", name);
     }
 
     bool WasRemoved = false;
-    Error RemoveResult = ISet_Remove(HashSet_AsSet(&Record->Holders), &user, &WasRemoved);
+    Error RemoveResult = UserSetRemove(&Record->Holders, user, &WasRemoved);
     if (RemoveResult.Code != ErrorCode_Success) { return RemoveResult; }
 
-    if (ISet_GetElementCount(HashSet_AsSet(&Record->Holders)) == 0U)
+    if (UserSetCount(&Record->Holders) == 0U)
     {
         return UnloadRecord(self, Record);
     }
@@ -1752,7 +1773,7 @@ Error AssetManager_LoadAssetSingle(AssetManager* self, AssetTypeID assetType, co
     if (TryGetLoadedRecord(self, assetType, name, &Existing))
     {
         bool WasAdded = false;
-        Error AddResult = ISet_Add(HashSet_AsSet(&Existing->Holders), &user, &WasAdded);
+        Error AddResult = UserSetAdd(&Existing->Holders, user, &WasAdded);
         if (AddResult.Code != ErrorCode_Success) { return AddResult; }
         *outAsset = Existing->Loaded.Asset;
         return Error_CreateSuccess();
@@ -1786,8 +1807,7 @@ Error AssetManager_LoadAssetSingle(AssetManager* self, AssetTypeID assetType, co
     Record->Loaded = Loaded;
     Record->DependencyUser = DependencyUser;
 
-    Error HoldersResult = HashSet_Construct1(&Record->Holders,
-        HashSetConstructOptions_CreateDefault(sizeof(AssetUserID), HashUserID));
+    Error HoldersResult = ConstructUserSet(&Record->Holders);
     if (HoldersResult.Code != ErrorCode_Success)
     {
         if ((Loaded.VTable != NULL) && (Loaded.VTable->Destroy != NULL)) { Loaded.VTable->Destroy(&Record->Loaded, self); }
@@ -1800,14 +1820,14 @@ Error AssetManager_LoadAssetSingle(AssetManager* self, AssetTypeID assetType, co
     }
 
     bool WasAdded = false;
-    Error UserAddResult = ISet_Add(HashSet_AsSet(&Record->Holders), &user, &WasAdded);
+    Error UserAddResult = UserSetAdd(&Record->Holders, user, &WasAdded);
     if (UserAddResult.Code != ErrorCode_Success)
     {
         if ((Loaded.VTable != NULL) && (Loaded.VTable->Destroy != NULL)) { Loaded.VTable->Destroy(&Record->Loaded, self); }
         Error ReleaseResult = ReleaseAllForUser(self, DependencyUser);
         Error_Deconstruct(&ReleaseResult);
         RemoveActiveUser(self, DependencyUser);
-        Error DeconstructResult = HashSet_Deconstruct(&Record->Holders);
+        Error DeconstructResult = HashMap_Deconstruct(&Record->Holders);
         Error_Deconstruct(&DeconstructResult);
         Memory_Free(Record->Name);
         Memory_Free(Record);
@@ -1823,7 +1843,7 @@ Error AssetManager_LoadAssetSingle(AssetManager* self, AssetTypeID assetType, co
         Error ReleaseResult = ReleaseAllForUser(self, DependencyUser);
         Error_Deconstruct(&ReleaseResult);
         RemoveActiveUser(self, DependencyUser);
-        Error DeconstructResult = HashSet_Deconstruct(&Record->Holders);
+        Error DeconstructResult = HashMap_Deconstruct(&Record->Holders);
         Error_Deconstruct(&DeconstructResult);
         Memory_Free(Record->Name);
         Memory_Free(Record);

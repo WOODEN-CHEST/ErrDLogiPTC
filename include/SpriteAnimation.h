@@ -208,6 +208,34 @@ struct SpriteAnimationInstanceStruct
 Error SpriteAnimation_Construct1(SpriteAnimation* self, GenericBuffer* frames);
 
 /**
+ * @brief Initializes an animation over a borrowed frame buffer with explicit default parameters.
+ *
+ * Like SpriteAnimation_Construct1 but sets the default FPS/step/running/looping values that
+ * SpriteAnimation_CreateInstance copies onto new instances, instead of the SPRITE_ANIMATION_*_DEFAULT
+ * constants. The frame buffer is borrowed (not owned) and must outlive @p self.
+ * @param self The animation to initialize; must not be NULL.
+ * @param frames Buffer of SpriteAnimationFrame records; must not be NULL and its element size must equal
+ *        sizeof(SpriteAnimationFrame). Borrowed and must outlive @p self.
+ * @param defaultFPS Default frames-per-second; must be finite and within
+ *        [SPRITE_ANIMATION_FPS_MIN, SPRITE_ANIMATION_FPS_MAX].
+ * @param defaultFrameStep Default per-change frame increment; must be within
+ *        [SPRITE_ANIMATION_FRAME_STEP_MIN, SPRITE_ANIMATION_FRAME_STEP_MAX].
+ * @param defaultIsRunning Default running state.
+ * @param defaultIsLooped Default looping state.
+ * @returns ErrorCode_Success on success; ErrorCode_IllegalArgument if @p self or @p frames is NULL or
+ *          @p frames has the wrong element size; ErrorCode_ArgumentOutOfRange if @p defaultFPS or
+ *          @p defaultFrameStep is out of range.
+ * @note May propagate errors from internal calls; consult the documentation of called functions for
+ *       the full set.
+ */
+Error SpriteAnimation_Construct2(SpriteAnimation* self,
+    GenericBuffer* frames,
+    double defaultFPS,
+    int64_t defaultFrameStep,
+    bool defaultIsRunning,
+    bool defaultIsLooped);
+
+/**
  * @brief Releases an animation, leaving its borrowed frame buffer untouched.
  *
  * Clears the animation's fields; the frame buffer is not freed.

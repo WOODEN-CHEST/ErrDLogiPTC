@@ -841,11 +841,40 @@ All design questions are resolved.
 - **Stream ownership.** `OpenResource` returns a heap `OpenedResource` (a `union { FileStream; MemoryStream }`
   first member, so the `IOStream*` casts back); `CloseResource` frees the wrapper + any backing buffer.
 
-**Remaining increment (the concrete types — nothing actually loads until these land):**
-- Six type modules implementing the constructors + `LoadAsset`/`Destroy` per `asset_structure.md`:
-  `SpriteSheetDefinition`, `SpriteAnimationDefinition`, `SoundDefinition`, `FontDefinition`,
-  `ShaderDefinition`, `ModelDefinition`. (New modules — flagged per the AGENTS "new module" rule.)
-- Wrapper modules: `GameSound`, `GameShader` (new), and fixing `GameModel.h`'s `GameMode` typo.
-- These are independent of each other given the fixed header contract, so they can be built (and reviewed)
-  one at a time.
+**Concrete types — DONE. The whole project compiles + links clean (`-std=c2x -Werror -Wall -Wextra
+-Wpedantic -O3`) and a headless smoke test (construct → register standard types → mint user → read
+definitions over a missing dir → load-missing fails cleanly → release → deconstruct → pool deconstruct)
+passes with ZERO leaked allocations.**
+
+New modules (flagged per the AGENTS "new module" rule):
+- `AssetDefinitionCommon` (`source/`, private) — shared JSON parsing (locations, names, numbers-as-strings,
+  texture properties, vectors, colors) built on the shared pool.
+- `SpriteSheetDefinition` — loads images, applies per-image padding (transparent / nearest-pixel edge
+  replication; nearest-pixel-transparent currently approximated as nearest-pixel, TODO), shelf-packs into
+  one atlas, records named regions.
+- `SpriteAnimationDefinition` — texture frames (owned) and sprite-sheet frames (loaded as dependencies via
+  the dependency user). Added `SpriteAnimation_Construct2` to the animation module to set the parsed
+  default fps/step/running/looping (Construct1 only set constants and the fields are read-only to callers).
+- `SoundDefinition` (fully-decoded Raylib Sound; requires the audio device already initialized),
+  `FontDefinition` (LoadFontEx at a base size), `ShaderDefinition` (location = fragment shader; vertex uses
+  the default; paired vs/fs is a future extension), `ModelDefinition` (static mesh + baked transform +
+  albedo/tint material overrides by slot).
+- New wrappers `GameSound`, `GameShader`; fixed `GameModel.h`'s `GameMode` typo (added getters to all).
+
+Loader strategy: every single-file loader resolves via `AssetManager_AcquireResourcePath` and uses Raylib's
+file loaders (which infer format from the extension), so reference/in-memory resources materialize through
+the temp-file path uniformly; only the shader loader (text source) uses the streaming API.
+
+**Environment note — `libwr.a` is missing three modules.** The linked `libwr.a` does not contain
+`WRComparator` (`Comparator_CompareString`), `WRSet` (`ISet_*`), or `WRHashSet` (`HashSet_*`), though the
+headers declare them. Worked around without touching the library: string equality uses
+`StringUTF8_EqualsExact`, and the user sets (asset holders, active users) are backed by a `HashMap` used as
+a set. If the WR library is later rebuilt with those modules, no change is needed here.
+
+**Not yet exercised at runtime:** actual asset loading (LoadImage/LoadTexture/LoadModel/LoadSound/LoadFont/
+LoadShader) needs a live GL/audio context and real asset files + JSON definitions, so it must be verified in
+the game itself. The parsing and non-GL manager paths are verified.
+
+**Fixed along the way:** `source/main.c` had `void main()` returning a value (blocked the whole build under
+`-Werror`); changed to `int main(void)`.
 ```

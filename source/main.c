@@ -1,8 +1,7 @@
 #include <stdio.h>
 #include "raylib/raylib.h"
 
-void main()
+int main(void)
 {
-    
     return 0;
 }

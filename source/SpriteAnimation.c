@@ -325,6 +325,37 @@ Error SpriteAnimation_Construct1(SpriteAnimation* self, GenericBuffer* frames)
     return Error_CreateSuccess();
 }
 
+Error SpriteAnimation_Construct2(SpriteAnimation* self,
+    GenericBuffer* frames,
+    double defaultFPS,
+    int64_t defaultFrameStep,
+    bool defaultIsRunning,
+    bool defaultIsLooped)
+{
+    Error Result = SpriteAnimation_Construct1(self, frames);
+    if (Result.Code != ErrorCode_Success)
+    {
+        return Result;
+    }
+
+    if (!isfinite(defaultFPS) || (defaultFPS < SPRITE_ANIMATION_FPS_MIN) || (defaultFPS > SPRITE_ANIMATION_FPS_MAX))
+    {
+        return Error_Construct3(ErrorCode_ArgumentOutOfRange,
+            u8"Default FPS must be finite and within [%g, %g].", SPRITE_ANIMATION_FPS_MIN, SPRITE_ANIMATION_FPS_MAX);
+    }
+    if ((defaultFrameStep < SPRITE_ANIMATION_FRAME_STEP_MIN) || (defaultFrameStep > SPRITE_ANIMATION_FRAME_STEP_MAX))
+    {
+        return Error_Construct3(ErrorCode_ArgumentOutOfRange,
+            u8"Default frame step must be within [%d, %d].", SPRITE_ANIMATION_FRAME_STEP_MIN, SPRITE_ANIMATION_FRAME_STEP_MAX);
+    }
+
+    self->_defaultFPS = defaultFPS;
+    self->_defaultFrameStep = defaultFrameStep;
+    self->_defaultIsRunning = defaultIsRunning;
+    self->_defaultIsLooped = defaultIsLooped;
+    return Error_CreateSuccess();
+}
+
 Error SpriteAnimation_Deconstruct(SpriteAnimation* self)
 {
     if (self == NULL)
