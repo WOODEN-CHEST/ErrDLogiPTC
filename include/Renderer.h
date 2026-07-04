@@ -80,6 +80,10 @@ typedef struct RenderContextStruct
     size_t _textureDrawCount;
     /** @brief Number of text strings drawn through this context since it was created. */
     size_t _stringDrawCount;
+    /** @brief Number of models drawn through this context since it was created. */
+    size_t _modelDrawCount;
+    /** @brief Number of meshes drawn through this context since it was created; instanced draws count each instance. */
+    size_t _meshDrawCount;
 } RenderContext;
 
 /**
@@ -199,6 +203,63 @@ typedef struct TextRenderArgumentsStruct
     /** @brief true if @c CachedDrawSize holds a valid cached measurement to reuse. */
     bool HasCachedDrawSize;
 } TextRenderArguments;
+
+/**
+ * @brief The full set of parameters for drawing a 3D model through a render context.
+ *
+ * Positions, rotates, and scales the model in world space (there is no aspect-ratio fitting for 3D
+ * geometry). Must be drawn inside a 3D pass opened with RenderContext_Begin3DMode.
+ */
+typedef struct ModelRenderArgumentsStruct
+{
+    /** @brief The model to draw; borrowed for the duration of the draw call. */
+    Model TargetModel;
+    /** @brief World-space position to place the model at. */
+    Vector3 Position;
+    /** @brief World-space axis to rotate the model around; need not be normalized. */
+    Vector3 RotationAxis;
+    /** @brief Rotation around @c RotationAxis, in radians. */
+    float RotationAngleRad;
+    /** @brief Per-axis world-space scale applied to the model. */
+    Vector3 Scale;
+    /** @brief The color/tint to draw with. */
+    RenderColor TargetColor;
+} ModelRenderArguments;
+
+/**
+ * @brief The full set of parameters for drawing a single 3D mesh through a render context.
+ *
+ * The mesh is drawn with an explicit world-space transform matrix and the given material; the material
+ * carries its own colors (there is no separate tint). Must be drawn inside a 3D pass opened with
+ * RenderContext_Begin3DMode.
+ */
+typedef struct MeshRenderArgumentsStruct
+{
+    /** @brief The mesh to draw; borrowed for the duration of the draw call. */
+    Mesh TargetMesh;
+    /** @brief The material to draw the mesh with; borrowed for the duration of the draw call. */
+    Material TargetMaterial;
+    /** @brief World-space transform (translation, rotation, scale) applied to the mesh. */
+    Matrix Transform;
+} MeshRenderArguments;
+
+/**
+ * @brief The full set of parameters for drawing many instances of one 3D mesh in a single call.
+ *
+ * Draws @c InstanceCount copies of @c TargetMesh, each with its own transform from @c Transforms, sharing
+ * one material. Must be drawn inside a 3D pass opened with RenderContext_Begin3DMode.
+ */
+typedef struct MeshInstancedRenderArgumentsStruct
+{
+    /** @brief The mesh to draw; borrowed for the duration of the draw call. */
+    Mesh TargetMesh;
+    /** @brief The material shared by every instance; borrowed for the duration of the draw call. */
+    Material TargetMaterial;
+    /** @brief Array of @c InstanceCount world-space transforms, one per instance; borrowed. */
+    const Matrix* Transforms;
+    /** @brief Number of instances to draw; must not exceed the length of @c Transforms. */
+    int InstanceCount;
+} MeshInstancedRenderArguments;
 
 
 // Functions.
@@ -400,6 +461,55 @@ void RenderContext_RenderTexture2D(RenderContext* self, const TextureRenderArgum
  * @param args The text draw parameters; must not be NULL, and @c args->Text must be a valid UTF-8 string.
  */
 void RenderContext_RenderText2D(RenderContext* self, const TextRenderArguments* args);
+
+/**
+ * @brief Draws a 3D model through the render context using the given arguments.
+ *
+ * Resolves the argument color, converts the rotation from radians to degrees, draws the model at the
+ * requested world-space position/rotation/scale, and increments the model draw counter. Must be called
+ * within a 3D pass opened by RenderContext_Begin3DMode.
+ * @param self The render context to draw with; must not be NULL.
+ * @param args The model draw parameters; must not be NULL.
+ */
+void RenderContext_RenderModel(RenderContext* self, const ModelRenderArguments* args);
+
+/**
+ * @brief Draws a single 3D mesh through the render context using the given arguments.
+ *
+ * Draws the mesh with the given material and world-space transform, and increments the mesh draw counter.
+ * Must be called within a 3D pass opened by RenderContext_Begin3DMode.
+ * @param self The render context to draw with; must not be NULL.
+ * @param args The mesh draw parameters; must not be NULL.
+ */
+void RenderContext_RenderMesh(RenderContext* self, const MeshRenderArguments* args);
+
+/**
+ * @brief Draws many instances of one 3D mesh through the render context in a single call.
+ *
+ * Draws @c args->InstanceCount copies of the mesh, one per transform in @c args->Transforms, sharing the
+ * given material, and increments the mesh draw counter by the instance count. Does nothing when the
+ * instance count is not positive. Must be called within a 3D pass opened by RenderContext_Begin3DMode.
+ * @param self The render context to draw with; must not be NULL.
+ * @param args The instanced mesh draw parameters; must not be NULL, and @c args->Transforms must hold at
+ *        least @c args->InstanceCount entries.
+ */
+void RenderContext_RenderMeshInstanced(RenderContext* self, const MeshInstancedRenderArguments* args);
+
+/**
+ * @brief Begins a 3D rendering pass with the given camera.
+ *
+ * Enters 3D mode so that subsequent model and mesh draws are projected through @p camera. Must be called
+ * inside an active pass opened by RenderContext_BeginRendering, and paired with RenderContext_End3DMode.
+ * @param self The render context; must not be NULL.
+ * @param camera The camera defining the 3D view and projection.
+ */
+void RenderContext_Begin3DMode(RenderContext* self, Camera3D camera);
+
+/**
+ * @brief Ends the 3D rendering pass started by RenderContext_Begin3DMode.
+ * @param self The render context; must not be NULL.
+ */
+void RenderContext_End3DMode(RenderContext* self);
 
 /**
  * @brief Begins a rendering pass targeting this context's buffer.

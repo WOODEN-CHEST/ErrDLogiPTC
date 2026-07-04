@@ -91,6 +91,8 @@ void RenderContext_Create(RenderContext* self,
 
     self->_textureDrawCount = 0;
     self->_stringDrawCount = 0;
+    self->_modelDrawCount = 0;
+    self->_meshDrawCount = 0;
 }
 
 void RenderContext_RenderTexture2D(RenderContext* self, const TextureRenderArguments* args)
@@ -164,6 +166,48 @@ void RenderContext_RenderText2D(RenderContext* self, const TextRenderArguments* 
         Spacing,
         FinalTint);
     self->_stringDrawCount++;
+}
+
+void RenderContext_RenderModel(RenderContext* self, const ModelRenderArguments* args)
+{
+    Color FinalTint = RenderColor_GetFinalColor(args->TargetColor);
+    float RotationDeg = Math_RadToDegFloat(args->RotationAngleRad);
+    DrawModelEx(args->TargetModel,
+        args->Position,
+        args->RotationAxis,
+        RotationDeg,
+        args->Scale,
+        FinalTint);
+    self->_modelDrawCount++;
+}
+
+void RenderContext_RenderMesh(RenderContext* self, const MeshRenderArguments* args)
+{
+    DrawMesh(args->TargetMesh, args->TargetMaterial, args->Transform);
+    self->_meshDrawCount++;
+}
+
+void RenderContext_RenderMeshInstanced(RenderContext* self, const MeshInstancedRenderArguments* args)
+{
+    if (args->InstanceCount <= 0)
+    {
+        return;
+    }
+
+    DrawMeshInstanced(args->TargetMesh, args->TargetMaterial, args->Transforms, args->InstanceCount);
+    self->_meshDrawCount += (size_t)args->InstanceCount;
+}
+
+void RenderContext_Begin3DMode(RenderContext* self, Camera3D camera)
+{
+    UNUSED(self);
+    BeginMode3D(camera);
+}
+
+void RenderContext_End3DMode(RenderContext* self)
+{
+    UNUSED(self);
+    EndMode3D();
 }
 
 void RenderContext_BeginRendering(RenderContext* self)
